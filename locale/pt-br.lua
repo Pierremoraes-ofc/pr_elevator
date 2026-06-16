@@ -1,0 +1,129 @@
+return {
+    -- idioma em portugues brasileiro
+    menu = {
+        title = 'PR Elevador',
+        description = 'Sistema de elevador by: Pinel Dev\'s',
+        elevator_keybind = 'Abrir Menu de Elevador',
+        elevator_keybind_description = 'Abre o menu de gerenciamento de elevadores e andares.',
+        -- Chaves de tradução para menus
+        manage_elevators = 'Gerenciar Elevadores',
+        create_elevator = 'Criar Elevador',
+        create_floor = 'Criar Andar',
+        create_item = 'Criar Item (Cartão)',
+        elevator_list = 'Lista de Elevadores',
+        no_elevators = 'Nenhum elevador encontrado.',
+        select_elevator = 'Selecionar Elevador',
+        delete_elevator = 'Excluir Elevador',
+        delete_elevator_confirm = 'Tem certeza que deseja excluir este elevador?',
+        delete_elevator_desc = 'Todos os andares vinculados a ele também serão excluídos.',
+        view_floors = 'Ver/Gerenciar Andares',
+        floor_list = 'Lista de Andares - Elevador: %s',
+        no_floors = 'Nenhum andar cadastrado para este elevador.',
+        floor_detail = 'Andar %s - %s',
+        meta_coords = 'Coord',
+        meta_interact = 'Interact',
+        meta_color_theme = 'Color Theme',
+        meta_color_bg = 'Color BG',
+        meta_distance = 'Distance',
+        delete_floor = 'Excluir Andar',
+        delete_floor_confirm = 'Tem certeza que deseja excluir este andar?',
+        teleport_to_floor = 'Teleportar para o Andar',
+        
+        -- Rótulos de formulário
+        form_name = 'Nome do Elevador',
+        form_type = 'Tipo de Elevador/Acesso',
+        form_type_public = 'Elevador Público',
+        form_type_job = 'Elevador de Emprego',
+        form_type_gang = 'Elevador de Gang',
+        form_type_citizenid = 'Elevador Player (CitizenID)',
+        form_type_password = 'Elevador por Senha',
+        form_type_keycard = 'Elevador por Cartão de Acesso',
+        form_type_job_keycard = 'Elevador por Emprego/Gang + Cartão',
+        form_type_job_password = 'Elevador por Emprego/Gang + Senha',
+        form_jobs_select = 'Selecionar Emprego/Gang',
+        form_job_grade = 'Nível de Cargo Mínimo',
+        form_password = 'Senha de Acesso',
+        form_access_key = 'Chave de Acesso / Código do Cartão',
+        form_citizenid = 'CitizenID do Player',
+        desc_name = 'Nome que identificará este elevador.',
+        desc_type = 'Define quem terá acesso a este elevador.',
+        desc_jobs_select = 'Emprego ou gangue permitido (usado nos tipos de Emprego/Gangue).',
+        desc_job_grade = 'Nível/cargo mínimo necessário para acessar (usado nos tipos de Emprego/Gangue).',
+        desc_password = 'Senha numérica ou texto necessária para acessar (usado nos tipos com Senha).',
+        desc_access_key = 'Código do cartão que será verificado no acesso (usado nos tipos com Cartão).',
+        desc_citizenid = 'CitizenID do jogador que terá acesso (usado no tipo Player CitizenID).',
+        error_job_required = 'Você precisa selecionar um emprego/gangue válido para este tipo de acesso.',
+        error_password_required = 'Você precisa definir uma senha de acesso para este tipo de acesso.',
+        error_keycard_required = 'Você precisa definir uma chave do cartão para este tipo de acesso.',
+        error_citizenid_required = 'Você precisa definir o CitizenID para este tipo de acesso.',
+        form_floor_number = 'Número do Andar',
+        form_floor_name = 'Nome do Andar (ex: T, S1)',
+        form_floor_order = 'Ordem do Andar (1, 2, 3...)',
+        form_distance = 'Distância de Interação',
+        form_theme_color = 'Cor do Tema',
+        form_theme_background = 'Cor do Fundo do Tema',
+        form_coords_spawn = 'Coordenada de Spawn (Vector 4)',
+        form_coords_interact = 'Posicionamento do Prop DUI (JSON)',
+        desc_floor_name = 'Nome que vai aparecer no painel (ex: T = térreo, S1 = subsolo 1).',
+        desc_floor_order = 'Ordem de exibição do andar no painel (números sequenciais).',
+        desc_distance = 'Distância necessária para conseguir abrir o menu do elevador.',
+        desc_theme_color = 'Cor principal dos textos e botões no painel deste andar.',
+        desc_theme_background = 'Cor de fundo do painel deste andar.',
+        desc_coords_spawn = 'Onde o jogador/veículo irá aparecer após o teleporte.',
+        desc_coords_interact = 'Payload salvo com coordenada, heading, rotacao e modelo do prop DUI.',
+        form_select_elevator_prompt = 'Selecione o elevador',
+        form_keycard_access_key = 'Chave de Acesso do Cartão',
+        edit_floor = 'Editar Andar',
+        current = 'Atual',
+        in_use = 'Em uso',
+        swap_floors_header = 'Trocar Ordem dos Andares',
+        swap_floors_confirm = 'A ordem de andar %s já está em uso pelo andar "%s". Deseja trocar as ordens deles (este andar se tornará %s e "%s" se tornará %s)?',
+        password = 'SENHA',
+        
+        -- Notificações
+        elevator_created = 'Elevador criado com sucesso!',
+        elevator_deleted = 'Elevador excluído com sucesso!',
+        waiting_elevator = 'Aguardando elevador...',
+        floor_not_found = 'Andar "%s" nao encontrado.',
+        floor_current = 'Voce ja esta neste andar.',
+        error_dui_unavailable = 'DUI do elevador indisponivel.',
+        floor_created = 'Andar criado com sucesso!',
+        floor_deleted = 'Andar excluído com sucesso!',
+        floor_updated = 'Andar atualizado com sucesso!',
+        floor_swapped = 'Ordem dos andares trocada com sucesso! O andar %s foi trocado com o andar %s.',
+        keycard_given = 'Cartão de acesso entregue com sucesso!',
+        error_fields = 'Preencha todos os campos obrigatórios.',
+        error_invalid_coords = 'Coordenadas inseridas inválidas.',
+        error_select_elevator = 'Por favor, selecione um elevador.',
+        no_elevators_to_floor = 'Você precisa criar um elevador antes de criar um andar.',
+        textui_position_spawn = [[        
+**[E]** - Quando posicionado no local        
+**[BACKSPACE]** - Para cancelar        
+]],
+        textui_position_interact = [[                
+**[E]** - Quando posicionado no local                
+**[BACKSPACE]** - Para cancelar                
+]],
+        position_dui = 'Reposicionar Prop DUI',
+        dui_position_updated = 'Posicao do prop DUI atualizada com sucesso!',
+        error_gizmo_unavailable = 'Gizmo indisponivel no pr_bridge.',
+        error_dui_position = 'Nao foi possivel criar o prop DUI para posicionamento.',
+        textui_position_dui = [[                
+**[ENTER]** - Confirmar posicao do prop                
+**[BACKSPACE/ESC]** - Cancelar                
+**[BOTAO DIREITO]** - Camera/drag do gizmo                
+**[R]** - Alternar mover/rotacionar                
+**[G]** - Encaixar no chao                
+**[F]** - Alternar camera                
+**[TAB]** - Precisao                
+]],
+        confirm_coords_header = 'Confirmar Coordenadas',
+        confirm_coords_content = 'Deseja confirmar as coordenadas marcadas?\n\nSpawn: %s\nInteração: %s',
+    },
+    debug = {
+        notify_client = "Notificação de cliente: %{title} | %{description} | %{type}",
+        onResourceStart = "PR Elevador iniciando...",
+        onResourceStarted = "PR Elevador iniciado com sucesso.",
+        databaseCreated = "Banco de dados %{title} criado/verificado com sucesso.",
+    }
+}

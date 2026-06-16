@@ -1,0 +1,129 @@
+return {
+    --language english
+    menu = {
+        title = 'PR Elevator',
+        description = 'Elevator system by: Pinel Dev\'s',
+        elevator_keybind = 'Open Elevator Menu',
+        elevator_keybind_description = 'Open the elevator management menu.',
+        -- Translations for menus
+        manage_elevators = 'Manage Elevators',
+        create_elevator = 'Create Elevator',
+        create_floor = 'Create Floor',
+        create_item = 'Create Keycard Item',
+        elevator_list = 'Elevator List',
+        no_elevators = 'No elevators found.',
+        select_elevator = 'Select Elevator',
+        delete_elevator = 'Delete Elevator',
+        delete_elevator_confirm = 'Are you sure you want to delete this elevator?',
+        delete_elevator_desc = 'All its floors will also be deleted.',
+        view_floors = 'View/Manage Floors',
+        floor_list = 'Floor List - Elevator: %s',
+        no_floors = 'No floors registered for this elevator.',
+        floor_detail = 'Floor %s - %s',
+        meta_coords = 'Coord',
+        meta_interact = 'Interact',
+        meta_color_theme = 'Color Theme',
+        meta_color_bg = 'Color BG',
+        meta_distance = 'Distance',
+        delete_floor = 'Delete Floor',
+        delete_floor_confirm = 'Are you sure you want to delete this floor?',
+        teleport_to_floor = 'Teleport to Floor',
+        
+        -- Form labels
+        form_name = 'Elevator Name',
+        form_type = 'Elevator Type/Access',
+        form_type_public = 'Public Elevator',
+        form_type_job = 'Job Elevator',
+        form_type_gang = 'Gang Elevator',
+        form_type_citizenid = 'Player Elevator (CitizenID)',
+        form_type_password = 'Elevator by Password',
+        form_type_keycard = 'Elevator by Keycard',
+        form_type_job_keycard = 'Elevator by Job/Gang + Keycard',
+        form_type_job_password = 'Elevator by Job/Gang + Password',
+        form_jobs_select = 'Select Job/Gang',
+        form_job_grade = 'Minimum Grade Level',
+        form_password = 'Access Password',
+        form_access_key = 'Access Key / Card Code',
+        form_citizenid = 'Player CitizenID',
+        desc_name = 'Name that will identify this elevator.',
+        desc_type = 'Define who can use this elevator.',
+        desc_jobs_select = 'Job or gang allowed to access (used in Job/Gang types).',
+        desc_job_grade = 'Minimum rank level required to use (used in Job/Gang types).',
+        desc_password = 'PIN/Password required to use (used in Password types).',
+        desc_access_key = 'Keycard value that will be checked (used in Keycard types).',
+        desc_citizenid = 'CitizenID of the player allowed to use (used in CitizenID type).',
+        error_job_required = 'You must select a valid job/gang for this type of access.',
+        error_password_required = 'You must enter an access password for this type of access.',
+        error_keycard_required = 'You must enter a card access key for this type of access.',
+        error_citizenid_required = 'You must enter a CitizenID for this type of access.',
+        form_floor_number = 'Floor Number',
+        form_floor_name = 'Floor Name (e.g. G, B1)',
+        form_floor_order = 'Floor Order (1, 2, 3...)',
+        form_distance = 'Interaction Distance',
+        form_theme_color = 'Theme Color',
+        form_theme_background = 'Theme Background Color',
+        form_coords_spawn = 'Spawn Coordinate (Vector 4)',
+        form_coords_interact = 'DUI Prop Placement (JSON)',
+        desc_floor_name = 'Name to show on the panel (e.g. G = ground floor, B1 = basement 1).',
+        desc_floor_order = 'Sorting order of the floor on the panel (sequential numbers).',
+        desc_distance = 'Distance required to open the elevator menu.',
+        desc_theme_color = 'Primary color for texts and buttons on the panel for this floor.',
+        desc_theme_background = 'Background color for the panel of this floor.',
+        desc_coords_spawn = 'Where the player/vehicle will spawn after teleport.',
+        desc_coords_interact = 'Saved payload with the DUI prop coordinates, heading, rotation, and model.',
+        form_select_elevator_prompt = 'Select the elevator',
+        form_keycard_access_key = 'Access Key for Card',
+        edit_floor = 'Edit Floor',
+        current = 'Current',
+        in_use = 'In use',
+        swap_floors_header = 'Swap Floor Orders',
+        swap_floors_confirm = 'Floor order %s is already in use by floor "%s". Do you want to swap their orders (this floor will become %s and "%s" will become %s)?',
+        password = 'PASSWORD',
+        
+        -- Notifications
+        elevator_created = 'Elevator created successfully!',
+        elevator_deleted = 'Elevator deleted successfully!',
+        waiting_elevator = 'Waiting for elevator...',
+        floor_not_found = 'Floor "%s" was not found.',
+        floor_current = 'You are already on this floor.',
+        error_dui_unavailable = 'Elevator DUI is unavailable.',
+        floor_created = 'Floor created successfully!',
+        floor_deleted = 'Floor deleted successfully!',
+        floor_updated = 'Floor updated successfully!',
+        floor_swapped = 'Floor orders swapped successfully! Floor %s was swapped with floor %s.',
+        keycard_given = 'Keycard given successfully!',
+        error_fields = 'Please fill in all required fields.',
+        error_invalid_coords = 'Invalid coordinates entered.',
+        error_select_elevator = 'Please select an elevator.',
+        no_elevators_to_floor = 'You need to create an elevator before creating a floor.',
+        textui_position_spawn = [[        
+**[E]** - When positioned at the location        
+**[BACKSPACE]** - To cancel        
+]],
+        textui_position_interact = [[                        
+**[E]** - When positioned at the location                        
+**[BACKSPACE]** - To cancel                        
+]],
+        position_dui = 'Reposition DUI Prop',
+        dui_position_updated = 'DUI prop position updated successfully!',
+        error_gizmo_unavailable = 'Gizmo is unavailable in pr_bridge.',
+        error_dui_position = 'Could not create the DUI prop for placement.',
+        textui_position_dui = [[                
+**[ENTER]** - Confirm prop position                
+**[BACKSPACE/ESC]** - Cancel                
+**[RIGHT MOUSE]** - Gizmo camera/drag                
+**[R]** - Toggle move/rotate                
+**[G]** - Snap to ground                
+**[F]** - Toggle camera                
+**[TAB]** - Precision                
+]],
+        confirm_coords_header = 'Confirm Coordinates',
+        confirm_coords_content = 'Do you want to confirm the marked coordinates?\n\nSpawn: %s\nInteraction: %s',
+    },
+    debug = {
+        notify_client = "Notify client: %{title} | %{description} | %{type}",
+        onResourceStart = "PR Elevator starting...",
+        onResourceStarted = "PR Elevator started successfully.",
+        databaseCreated = "Database %{title} verified/created.",
+    }
+}
