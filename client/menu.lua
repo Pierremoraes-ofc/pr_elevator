@@ -33,6 +33,7 @@ local OpenElevatorControlMenu
 local OpenFloorListMenu
 local OpenFloorControlMenu
 local CreateElevatorMenu
+local OpenElevatorEditInputDialog
 local CreateFloorMenu
 local CreateItemMenu
 local OpenFloorDetailsInputDialog
@@ -41,6 +42,168 @@ local OpenFloorDuiPlacementEditor
 
 local DUI_KEYPAD_MODEL = joaat('ch_prop_casino_keypad_01')
 local DUI_KEYPAD_MODEL_NAME = 'ch_prop_casino_keypad_01'
+
+local function buildFloorNameOptions()
+    local options = {}
+
+    for i = 10, 1, -1 do
+        local value = ('S%s'):format(i)
+        options[#options + 1] = {
+            value = value,
+            label = value
+        }
+    end
+
+    options[#options + 1] = {
+        value = 'T',
+        label = 'T'
+    }
+
+    for i = 1, 50 do
+        local value = tostring(i)
+        options[#options + 1] = {
+            value = value,
+            label = value
+        }
+    end
+
+    return options
+end
+
+local function normalizeEmpty(value)
+    if value == nil or value == '' or value == 'none' then return nil end
+    return value
+end
+
+local function buildAccessTypeOptions()
+    return {
+        { value = 'public', label = lang('menu.form_type_public') },
+        { value = 'job', label = lang('menu.form_type_job') },
+        { value = 'gang', label = lang('menu.form_type_gang') },
+        { value = 'citizenid', label = lang('menu.form_type_citizenid') },
+        { value = 'password', label = lang('menu.form_type_password') },
+        { value = 'keycard', label = lang('menu.form_type_keycard') },
+        { value = 'job_citizenid', label = lang('menu.form_type_job_citizenid') or 'Emprego/Gang + Player ID' },
+        { value = 'job_keycard', label = lang('menu.form_type_job_keycard') },
+        { value = 'job_password', label = lang('menu.form_type_job_password') },
+    }
+end
+
+local function buildJobOptions(serverJobs)
+    local options = {
+        { value = 'none', label = 'Nenhum' }
+    }
+
+    if serverJobs then
+        for i = 1, #serverJobs do
+            options[#options + 1] = {
+                value = serverJobs[i].name,
+                label = serverJobs[i].label
+            }
+        end
+    end
+
+    return options
+end
+
+local function getConfiguredItemList()
+    local configuredItems = PR.ItemList or {}
+    local items = {}
+
+    for i = 1, #configuredItems do
+        items[#items + 1] = configuredItems[i]
+    end
+
+    if #items == 0 then
+        for itemName, itemData in pairs(configuredItems) do
+            if type(itemData) == 'table' then
+                items[#items + 1] = {
+                    item = itemData.item or itemData.name or itemName,
+                    label = itemData.label or itemData.item or itemData.name or itemName,
+                    image = itemData.image
+                }
+            elseif type(itemData) == 'string' then
+                items[#items + 1] = {
+                    item = itemData,
+                    label = itemData
+                }
+            end
+        end
+    end
+
+    if #items == 0 then
+        return {
+            {
+                item = PR.keycardItem or 'elevator_card',
+                label = PR.keycardItem or 'elevator_card'
+            }
+        }
+    end
+
+    return items
+end
+
+local function getItemName(itemData)
+    if type(itemData) == 'table' then return itemData.item or itemData.name end
+    return itemData
+end
+
+local function getItemLabel(itemData)
+    if type(itemData) == 'table' then return itemData.label or itemData.item or itemData.name end
+    return itemData
+end
+
+local function getItemImage(itemData)
+    if type(itemData) == 'table' and itemData.image then return itemData.image end
+
+    local item = getItemName(itemData)
+    if not item or not PR.InventoryImagePath then return nil end
+
+    return PR.InventoryImagePath:format(item)
+end
+
+local function buildKeycardItemOptions()
+    local options = {
+        { value = 'none', label = 'Qualquer cartao configurado' }
+    }
+    local items = getConfiguredItemList()
+
+    for i = 1, #items do
+        local item = getItemName(items[i])
+        if item then
+            options[#options + 1] = {
+                value = item,
+                label = getItemLabel(items[i]) or item
+            }
+        end
+    end
+
+    return options
+end
+
+local function validateAccessFields(accessType, job, password, accessKey, citizenid)
+    if (accessType == 'job' or accessType == 'gang' or accessType == 'job_citizenid' or accessType == 'job_keycard' or accessType == 'job_password') and not job then
+        notify(lang('menu.title'), lang('menu.error_job_required'), 'error')
+        return false
+    end
+
+    if (accessType == 'password' or accessType == 'job_password') and not password then
+        notify(lang('menu.title'), lang('menu.error_password_required'), 'error')
+        return false
+    end
+
+    if (accessType == 'keycard' or accessType == 'job_keycard') and not accessKey then
+        notify(lang('menu.title'), lang('menu.error_keycard_required'), 'error')
+        return false
+    end
+
+    if (accessType == 'citizenid' or accessType == 'job_citizenid') and not citizenid then
+        notify(lang('menu.title'), lang('menu.error_citizenid_required'), 'error')
+        return false
+    end
+
+    return true
+end
 
 local function decodeJson(value)
     if type(value) ~= 'string' then return value end
@@ -478,7 +641,7 @@ OpenElevatorListMenu = function()
             local el = elevators[i]
             table.insert(options, {
                 title = el.name or ("ID: " .. el.id),
-                description = ("ID: %s | Access Key: %s"):format(el.id, el.access_key or "None"),
+                description = ("ID: %s"):format(el.id),
                 onSelect = function()
                     OpenElevatorControlMenu(el)
                 end
@@ -518,6 +681,13 @@ OpenElevatorControlMenu = function(el)
                     end
                 },
                 {
+                    title = lang('menu.edit_elevator'),
+                    icon = 'pen-to-square',
+                    onSelect = function()
+                        OpenElevatorEditInputDialog(el)
+                    end
+                },
+                {
                     title = lang('menu.delete_elevator'),
                     icon = 'trash',
                     onSelect = function()
@@ -542,6 +712,30 @@ OpenElevatorControlMenu = function(el)
             }
         })
         pr_lib.menu.ShowContext('pr_elevator_control_menu')
+    end)
+end
+
+OpenElevatorEditInputDialog = function(el)
+    CreateThread(function()
+        local input = pr_lib.menu.InputDialog(lang('menu.edit_elevator') .. " - " .. (el.name or el.id), {
+            {type = 'input', label = lang('menu.form_name'), description = lang('menu.desc_name'), default = el.name, required = true},
+        })
+
+        if not input then
+            OpenElevatorControlMenu(el)
+            return
+        end
+
+        local name = input[1]
+        if not name or name == "" then
+            notify(lang('menu.title'), lang('menu.error_fields'), 'error')
+            OpenElevatorControlMenu(el)
+            return
+        end
+
+        el.name = name
+        TriggerServerEvent('pr_elevator:server:updateElevator', el.id, name)
+        OpenElevatorControlMenu(el)
     end)
 end
 
@@ -676,39 +870,8 @@ end
 -- Formulário de Criação de Elevador
 CreateElevatorMenu = function()
     CreateThread(function()
-        -- Obter a lista de empregos/gangues do servidor para preencher o select
-        local serverJobs = pr_lib.callback.await('pr_elevator:server:getJobsList')
-        local jobOptions = {
-            { value = 'none', label = 'Nenhum' }
-        }
-        if serverJobs then
-            for i = 1, #serverJobs do
-                table.insert(jobOptions, {
-                    value = serverJobs[i].name,
-                    label = serverJobs[i].label
-                })
-            end
-        end
-
-        local typeOptions = {
-            { value = 'public', label = lang('menu.form_type_public') },
-            { value = 'job', label = lang('menu.form_type_job') },
-            { value = 'gang', label = lang('menu.form_type_gang') },
-            { value = 'citizenid', label = lang('menu.form_type_citizenid') },
-            { value = 'password', label = lang('menu.form_type_password') },
-            { value = 'keycard', label = lang('menu.form_type_keycard') },
-            { value = 'job_keycard', label = lang('menu.form_type_job_keycard') },
-            { value = 'job_password', label = lang('menu.form_type_job_password') },
-        }
-
         local input = pr_lib.menu.InputDialog(lang('menu.create_elevator'), {
             {type = 'input', label = lang('menu.form_name'), description = lang('menu.desc_name'), required = true},
-            {type = 'select', label = lang('menu.form_type'), description = lang('menu.desc_type'), options = typeOptions, required = true},
-            {type = 'select', label = lang('menu.form_jobs_select'), description = lang('menu.desc_jobs_select'), options = jobOptions, default = 'none'},
-            {type = 'number', label = lang('menu.form_job_grade'), description = lang('menu.desc_job_grade'), default = 0},
-            {type = 'input', label = lang('menu.form_password'), description = lang('menu.desc_password')},
-            {type = 'input', label = lang('menu.form_access_key'), description = lang('menu.desc_access_key')},
-            {type = 'input', label = lang('menu.form_citizenid'), description = lang('menu.desc_citizenid')},
         })
 
         if not input then
@@ -717,45 +880,14 @@ CreateElevatorMenu = function()
         end
 
         local name = input[1]
-        local elevatorType = input[2]
-        local job = input[3] == 'none' and nil or input[3]
-        local jobGrade = tonumber(input[4]) or 0
-        local password = input[5] == "" and nil or input[5]
-        local accessKey = input[6] == "" and nil or input[6]
-        local citizenid = input[7] == "" and nil or input[7]
 
-        -- Validações básicas e específicas de tipo de acesso
-        if not name or name == "" or not elevatorType then
+        if not name or name == "" then
             notify(lang('menu.title'), lang('menu.error_fields'), 'error')
             OpenManageMenu()
             return
         end
 
-        if (elevatorType == 'job' or elevatorType == 'gang' or elevatorType == 'job_keycard' or elevatorType == 'job_password') and not job then
-            notify(lang('menu.title'), lang('menu.error_job_required'), 'error')
-            OpenManageMenu()
-            return
-        end
-
-        if (elevatorType == 'password' or elevatorType == 'job_password') and not password then
-            notify(lang('menu.title'), lang('menu.error_password_required'), 'error')
-            OpenManageMenu()
-            return
-        end
-
-        if (elevatorType == 'keycard' or elevatorType == 'job_keycard') and not accessKey then
-            notify(lang('menu.title'), lang('menu.error_keycard_required'), 'error')
-            OpenManageMenu()
-            return
-        end
-
-        if elevatorType == 'citizenid' and not citizenid then
-            notify(lang('menu.title'), lang('menu.error_citizenid_required'), 'error')
-            OpenManageMenu()
-            return
-        end
-
-        TriggerServerEvent('pr_elevator:server:createElevator', name, elevatorType, job, jobGrade, password, accessKey, citizenid)
+        TriggerServerEvent('pr_elevator:server:createElevator', name, 'public', nil, 0, nil, nil, nil)
     end)
 end
 
@@ -832,6 +964,10 @@ OpenFloorDetailsInputDialog = function(el, presetSpawn, presetInteract)
 
         local spawnStr = type(presetSpawn) == 'table' and formatSpawnInput(presetSpawn) or presetSpawn
         local interactStr = type(presetInteract) == 'table' and formatInteractInput(presetInteract) or presetInteract
+        local floorNameOptions = buildFloorNameOptions()
+        local accessTypeOptions = buildAccessTypeOptions()
+        local jobOptions = buildJobOptions(pr_lib.callback.await('pr_elevator:server:getJobsList'))
+        local keycardItemOptions = buildKeycardItemOptions()
 
         if not spawnStr or not interactStr then
             -- 1. Prompt player to stand at spawn point
@@ -885,13 +1021,20 @@ OpenFloorDetailsInputDialog = function(el, presetSpawn, presetInteract)
         end
 
         local input = pr_lib.menu.InputDialog(lang('menu.create_floor') .. " - " .. el.name, {
-            {type = 'input', label = lang('menu.form_floor_name'), description = lang('menu.desc_floor_name'), required = true},
+            {type = 'select', label = lang('menu.form_floor_name'), description = lang('menu.desc_floor_name'), options = floorNameOptions, default = 'T', required = true},
             {type = 'select', label = lang('menu.form_floor_order'), description = lang('menu.desc_floor_order'), options = orderOptions, default = orderOptions[1].value, required = true},
             {type = 'number', label = lang('menu.form_distance'), description = lang('menu.desc_distance'), default = 2.0},
             {type = 'color', label = lang('menu.form_theme_color'), description = lang('menu.desc_theme_color'), default = '#00F8B8'},
             {type = 'color', label = lang('menu.form_theme_background'), description = lang('menu.desc_theme_background'), default = '#1E7F7E'},
             {type = 'input', label = lang('menu.form_coords_spawn'), description = lang('menu.desc_coords_spawn'), default = spawnStr, required = true},
             {type = 'input', label = lang('menu.form_coords_interact'), description = lang('menu.desc_coords_interact'), default = interactStr, required = true},
+            {type = 'select', label = lang('menu.form_floor_access_type'), description = lang('menu.desc_floor_access_type'), options = accessTypeOptions, default = 'public', required = true},
+            {type = 'select', label = lang('menu.form_jobs_select'), description = lang('menu.desc_jobs_select'), options = jobOptions, default = 'none'},
+            {type = 'number', label = lang('menu.form_job_grade'), description = lang('menu.desc_job_grade'), default = 0},
+            {type = 'input', label = lang('menu.form_password'), description = lang('menu.desc_password')},
+            {type = 'select', label = lang('menu.form_keycard_item'), description = lang('menu.desc_keycard_item'), options = keycardItemOptions, default = 'none'},
+            {type = 'input', label = lang('menu.form_access_key'), description = lang('menu.desc_access_key')},
+            {type = 'input', label = lang('menu.form_citizenid'), description = lang('menu.desc_citizenid')},
         })
 
         if not input then
@@ -906,6 +1049,13 @@ OpenFloorDetailsInputDialog = function(el, presetSpawn, presetInteract)
         local themeBackground = input[5]
         local coordsSpawnStr = input[6]
         local coordsInteractStr = input[7]
+        local accessType = input[8] or 'public'
+        local accessJob = normalizeEmpty(input[9])
+        local accessJobGrade = tonumber(input[10]) or 0
+        local accessPassword = normalizeEmpty(input[11])
+        local accessItem = normalizeEmpty(input[12])
+        local accessKey = normalizeEmpty(input[13])
+        local accessCitizenid = normalizeEmpty(input[14])
 
         -- Validar se os campos obrigatórios estão preenchidos
         if not floorName or floorName == "" or not floorOrder or not coordsSpawnStr or not coordsInteractStr then
@@ -923,7 +1073,12 @@ OpenFloorDetailsInputDialog = function(el, presetSpawn, presetInteract)
             return
         end
 
-        TriggerServerEvent('pr_elevator:server:createFloor', el.id, floorName, floorOrder, distance, themeColor, themeBackground, spawnTable, interactTable)
+        if not validateAccessFields(accessType, accessJob, accessPassword, accessKey, accessCitizenid) then
+            OpenFloorDetailsInputDialog(el, coordsSpawnStr, coordsInteractStr)
+            return
+        end
+
+        TriggerServerEvent('pr_elevator:server:createFloor', el.id, floorName, floorOrder, distance, themeColor, themeBackground, spawnTable, interactTable, accessType, accessJob, accessJobGrade, accessPassword, accessKey, accessItem, accessCitizenid)
     end)
 end
 
@@ -966,6 +1121,13 @@ OpenFloorDuiPlacementEditor = function(el, fl)
             currentFloorData.theme_background,
             spawnTable,
             interactPayload,
+            currentFloorData.access_type or 'public',
+            currentFloorData.access_job,
+            currentFloorData.access_job_grade or 0,
+            currentFloorData.access_password,
+            currentFloorData.access_key,
+            currentFloorData.access_item,
+            currentFloorData.access_citizenid,
             nil,
             currentFloorData.floor
         )
@@ -1016,15 +1178,26 @@ OpenFloorEditInputDialog = function(el, fl)
 
         local defaultSpawn = formatSpawnInput(currentCoords)
         local defaultInteract = formatInteractInput(currentInteract)
+        local floorNameOptions = buildFloorNameOptions()
+        local accessTypeOptions = buildAccessTypeOptions()
+        local jobOptions = buildJobOptions(pr_lib.callback.await('pr_elevator:server:getJobsList'))
+        local keycardItemOptions = buildKeycardItemOptions()
 
         local input = pr_lib.menu.InputDialog(lang('menu.edit_floor') .. " - " .. currentFloorData.name, {
-            {type = 'input', label = lang('menu.form_floor_name'), description = lang('menu.desc_floor_name'), default = currentFloorData.name, required = true},
+            {type = 'select', label = lang('menu.form_floor_name'), description = lang('menu.desc_floor_name'), options = floorNameOptions, default = currentFloorData.name or 'T', required = true},
             {type = 'select', label = lang('menu.form_floor_order'), description = lang('menu.desc_floor_order'), options = orderOptions, default = currentFloorData.floor, required = true},
             {type = 'number', label = lang('menu.form_distance'), description = lang('menu.desc_distance'), default = currentFloorData.distance or 2.0},
             {type = 'color', label = lang('menu.form_theme_color'), description = lang('menu.desc_theme_color'), default = currentFloorData.theme_color or '#00F8B8'},
             {type = 'color', label = lang('menu.form_theme_background'), description = lang('menu.desc_theme_background'), default = currentFloorData.theme_background or '#1E7F7E'},
             {type = 'input', label = lang('menu.form_coords_spawn'), description = lang('menu.desc_coords_spawn'), default = defaultSpawn, required = true},
             {type = 'input', label = lang('menu.form_coords_interact'), description = lang('menu.desc_coords_interact'), default = defaultInteract, required = true},
+            {type = 'select', label = lang('menu.form_floor_access_type'), description = lang('menu.desc_floor_access_type'), options = accessTypeOptions, default = currentFloorData.access_type or 'public', required = true},
+            {type = 'select', label = lang('menu.form_jobs_select'), description = lang('menu.desc_jobs_select'), options = jobOptions, default = currentFloorData.access_job or 'none'},
+            {type = 'number', label = lang('menu.form_job_grade'), description = lang('menu.desc_job_grade'), default = currentFloorData.access_job_grade or 0},
+            {type = 'input', label = lang('menu.form_password'), description = lang('menu.desc_password'), default = currentFloorData.access_password},
+            {type = 'select', label = lang('menu.form_keycard_item'), description = lang('menu.desc_keycard_item'), options = keycardItemOptions, default = currentFloorData.access_item or 'none'},
+            {type = 'input', label = lang('menu.form_access_key'), description = lang('menu.desc_access_key'), default = currentFloorData.access_key},
+            {type = 'input', label = lang('menu.form_citizenid'), description = lang('menu.desc_citizenid'), default = currentFloorData.access_citizenid},
         })
 
         if not input then
@@ -1039,6 +1212,13 @@ OpenFloorEditInputDialog = function(el, fl)
         local themeBackground = input[5]
         local coordsSpawnStr = input[6]
         local coordsInteractStr = input[7]
+        local accessType = input[8] or 'public'
+        local accessJob = normalizeEmpty(input[9])
+        local accessJobGrade = tonumber(input[10]) or 0
+        local accessPassword = normalizeEmpty(input[11])
+        local accessItem = normalizeEmpty(input[12])
+        local accessKey = normalizeEmpty(input[13])
+        local accessCitizenid = normalizeEmpty(input[14])
 
         if not floorName or floorName == "" or not floorOrder or not coordsSpawnStr or not coordsInteractStr then
             notify(lang('menu.title'), lang('menu.error_fields'), 'error')
@@ -1051,6 +1231,11 @@ OpenFloorEditInputDialog = function(el, fl)
 
         if not spawnTable or not interactTable then
             notify(lang('menu.title'), lang('menu.error_invalid_coords'), 'error')
+            OpenFloorEditInputDialog(el, currentFloorData)
+            return
+        end
+
+        if not validateAccessFields(accessType, accessJob, accessPassword, accessKey, accessCitizenid) then
             OpenFloorEditInputDialog(el, currentFloorData)
             return
         end
@@ -1083,30 +1268,63 @@ OpenFloorEditInputDialog = function(el, fl)
             notify(lang('menu.title'), lang('menu.floor_updated'), 'success')
         end
 
-        TriggerServerEvent('pr_elevator:server:updateFloor', currentFloorData.id, el.id, floorName, floorOrder, distance, themeColor, themeBackground, spawnTable, interactTable, targetSwapFloorId, currentFloorData.floor)
+        TriggerServerEvent('pr_elevator:server:updateFloor', currentFloorData.id, el.id, floorName, floorOrder, distance, themeColor, themeBackground, spawnTable, interactTable, accessType, accessJob, accessJobGrade, accessPassword, accessKey, accessItem, accessCitizenid, targetSwapFloorId, currentFloorData.floor)
     end)
 end
 
 -- Formulário de Criação de Item (Cartão)
 CreateItemMenu = function()
     CreateThread(function()
-        local input = pr_lib.menu.InputDialog(lang('menu.create_item'), {
-            {type = 'input', label = lang('menu.form_keycard_access_key'), required = true},
+        local items = getConfiguredItemList()
+        local options = {}
+
+        for i = 1, #items do
+            local item = getItemName(items[i])
+            if item then
+                options[#options + 1] = {
+                    title = getItemLabel(items[i]) or item,
+                    description = item,
+                    image = getItemImage(items[i]),
+                    metadata = {
+                        { label = 'Item', value = item }
+                    },
+                    onSelect = function()
+                        local input = pr_lib.menu.InputDialog(lang('menu.create_item'), {
+                            {type = 'input', label = lang('menu.form_keycard_access_key'), description = lang('menu.desc_access_key'), required = true},
+                        })
+
+                        if not input then
+                            CreateItemMenu()
+                            return
+                        end
+
+                        local accessKey = input[1]
+                        if not accessKey or accessKey == "" then
+                            notify(lang('menu.title'), lang('menu.error_fields'), 'error')
+                            CreateItemMenu()
+                            return
+                        end
+
+                        TriggerServerEvent('pr_elevator:server:giveKeycard', item, accessKey)
+                    end
+                }
+            end
+        end
+
+        options[#options + 1] = {
+            title = '← Voltar',
+            onSelect = function()
+                OpenManageMenu()
+            end
+        }
+
+        pr_lib.menu.RegisterContext({
+            id = 'pr_elevator_keycard_item_menu',
+            title = lang('menu.create_item'),
+            menu = 'pr_elevator_manage_menu',
+            options = options
         })
-
-        if not input then
-            OpenManageMenu()
-            return
-        end
-
-        local accessKey = input[1]
-        if not accessKey or accessKey == "" then
-            notify(lang('menu.title'), lang('menu.error_fields'), 'error')
-            OpenManageMenu()
-            return
-        end
-
-        TriggerServerEvent('pr_elevator:server:giveKeycard', accessKey)
+        pr_lib.menu.ShowContext('pr_elevator_keycard_item_menu')
     end)
 end
 

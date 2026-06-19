@@ -1,23 +1,44 @@
 
+function setDisplay(selector, value) {
+    document.querySelectorAll(selector).forEach(function (element) {
+        element.style.display = value;
+    });
+}
+
+let currentDisplayText = 'ENTER CODE';
+
+function setDisplayText(value) {
+    currentDisplayText = value == null ? '' : String(value);
+    document.querySelectorAll('.display').forEach(function (element) {
+        element.textContent = currentDisplayText;
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    setDisplayText(currentDisplayText);
+    setDisplay('.keypad', 'none');
+    setDisplay('.mouse', 'none');
+});
+
 window.addEventListener('message', function (event) {
-    let e = event.data;
+    const e = event.data;
     switch (e.action) {
         case "KEYPAD":
             if (!e.value) {
-                $('.keypad').css('display', 'none');
+                setDisplay('.keypad', 'none');
             }else {
-                $('.keypad').css('display', 'flex');
+                setDisplay('.keypad', 'flex');
             }
             break;
         case "MOUSE":
             if (!e.value) {
-                $('.mouse').css('display', 'none');
+                setDisplay('.mouse', 'none');
             }else {
-                $('.mouse').css('display', 'flex');
+                setDisplay('.mouse', 'flex');
             }
             break;
         case "DISPLAY":
-            $('.display').text(e.value);
+            setDisplayText(e.value);
             break;
         case "BUTTON":
             HighlightButton(e.value)
@@ -29,10 +50,14 @@ window.addEventListener('message', function (event) {
 let prevBtnID = -1
 function HighlightButton(ID) {
     if (prevBtnID > 0 ) {
-        $('#btn' + prevBtnID).removeClass('active');
+        const previous = document.getElementById('btn' + prevBtnID);
+        if (previous) previous.classList.remove('active');
     }
     if (ID > 0 ) {
-        $('#btn' + ID).addClass('active');
+        const current = document.getElementById('btn' + ID);
+        if (current) current.classList.add('active');
         prevBtnID = ID
+    } else {
+        prevBtnID = -1
     }
 }

@@ -5,6 +5,25 @@ local renderedKeypads = {}
 local textUiVisible = false
 local refreshInProgress = false
 
+local function getInteractionMode()
+    return tostring(PR and PR.Target or 'ox_target'):lower()
+end
+
+local function shouldUseOxTarget()
+    local mode = getInteractionMode()
+    return mode == 'ox_target' or mode == 'target' or mode == 'both' or mode == 'all'
+end
+
+local function shouldUseInteract()
+    local mode = getInteractionMode()
+    return mode == 'interact' or mode == 'both' or mode == 'all'
+end
+
+local function hasConfiguredTargetStarted()
+    return (shouldUseOxTarget() and GetResourceState('ox_target') == 'started')
+        or (shouldUseInteract() and GetResourceState('interact') == 'started')
+end
+
 local function runtimeDebug(message)
     pr_lib.debug("info", ("[pr_elevator:runtime] %s"):format(message))
 end
@@ -134,7 +153,8 @@ local function getPlayerAccessData()
         jobGrade = 0,
         gangName = nil,
         gangGrade = 0,
-        citizenid = raw.citizenid or raw.identifier
+        citizenid = raw.citizenid or raw.citizenId or raw.identifier,
+        sourceId = tostring(GetPlayerServerId(PlayerId()))
     }
 
     if pr_lib.framework and pr_lib.framework.GetJobInfo then
@@ -166,44 +186,199 @@ local function getPlayerAccessData()
     return access
 end
 
+local function cleanAccessValue(value)
+    if value == nil then return nil end
+
+    value = tostring(value)
+    value = value:gsub("^%s+", ""):gsub("%s+$", "")
+    local lowerValue = value:lower()
+    if value == '' or lowerValue == 'none' or lowerValue == 'null' then return nil end
+
+    return value
+end
+
+local function normalizeAccessType(accessType)
+    accessType = cleanAccessValue(accessType)
+    if not accessType then return 'public' end
+
+    accessType = accessType:lower()
+    accessType = accessType:gsub("%s+", "_"):gsub("%-", "_")
+
+    local aliases = {
+        public = 'public',
+        publico = 'public',
+        livre = 'public',
+        job = 'job',
+        emprego = 'job',
+        gang = 'job',
+        gangue = 'job',
+        group = 'job',
+        grupo = 'job',
+        citizenid = 'citizenid',
+        citizen_id = 'citizenid',
+        cid = 'citizenid',
+        player = 'citizenid',
+        player_id = 'citizenid',
+        password = 'password',
+        senha = 'password',
+        keycard = 'keycard',
+        card = 'keycard',
+        cartao = 'keycard',
+        cartao_acesso = 'keycard',
+        access_card = 'keycard',
+        job_keycard = 'job_keycard',
+        job_card = 'job_keycard',
+        emprego_cartao = 'job_keycard',
+        gang_keycard = 'job_keycard',
+        gang_card = 'job_keycard',
+        grupo_cartao = 'job_keycard',
+        job_password = 'job_password',
+        job_senha = 'job_password',
+        emprego_senha = 'job_password',
+        gang_password = 'job_password',
+        gang_senha = 'job_password',
+        grupo_senha = 'job_password',
+        job_citizenid = 'job_citizenid',
+        job_player_id = 'job_citizenid',
+        emprego_player_id = 'job_citizenid',
+        grupo_player_id = 'job_citizenid'
+    }
+
+    return aliases[accessType] or accessType
+end
+
 local function metadataMatches(metadata, accessKey)
     if not accessKey or accessKey == '' then return false end
     if type(metadata) ~= 'table' then return false end
 
-    return metadata.access_key == accessKey
-        or metadata.accessKey == accessKey
-        or metadata.acesso == accessKey
-        or metadata.access == accessKey
+    local expected = tostring(accessKey)
+    return tostring(metadata.access_key or '') == expected
+        or tostring(metadata.accessKey or '') == expected
+        or tostring(metadata.acesso or '') == expected
+        or tostring(metadata.access or '') == expected
 end
 
-local function hasKeycard(accessKey)
-    if not accessKey or accessKey == '' then return false end
+local function getConfiguredKeycardItems(itemName)
+    if itemName and itemName ~= '' then return { itemName } end
 
-    local itemName = PR.keycardItem or 'elevator_card'
+    local items = {}
+    local list = PR.ItemList or {}
+    for i = 1, #list do
+        local value = list[i]
+        if type(value) == 'table' and value.item then
+            items[#items + 1] = value.item
+        elseif type(value) == 'string' then
+            items[#items + 1] = value
+        end
+    end
+
+    if #items == 0 then
+        for itemName, value in pairs(list) do
+            if type(value) == 'table' then
+                items[#items + 1] = value.item or value.name or itemName
+            elseif type(value) == 'string' then
+                items[#items + 1] = value
+            end
+        end
+    end
+
+    if #items == 0 then
+        items[1] = PR.keycardItem or 'elevator_card'
+    end
+
+    return items
+end
+
+local function itemNameMatches(item, allowedItems)
+    if not item then return false end
+    local itemName = item.name or item.item
+
+    for i = 1, #allowedItems do
+        if itemName == allowedItems[i] then return true end
+    end
+
+    return false
+end
+
+local function hasKeycard(accessKey, itemName)
+    accessKey = cleanAccessValue(accessKey)
+    if not accessKey then return false end
+
+    local allowedItems = getConfiguredKeycardItems(itemName)
+    local metadataVariants = {
+        { acesso = accessKey },
+        { access_key = accessKey },
+        { accessKey = accessKey },
+        { access = accessKey }
+    }
     local inventory = pr_lib.inventory or pr_lib.inventories
-    if not inventory then return false end
 
-    if inventory.GetItemCount then
-        local ok, count = pcall(inventory.GetItemCount, itemName, { access_key = accessKey }, true)
-        if ok and tonumber(count) and tonumber(count) > 0 then return true end
-    end
+    if GetResourceState('ox_inventory') == 'started' then
+        for i = 1, #allowedItems do
+            for j = 1, #metadataVariants do
+                local okCount, count = pcall(function()
+                    return exports.ox_inventory:Search('count', allowedItems[i], metadataVariants[j])
+                end)
+                if okCount and tonumber(count) and tonumber(count) > 0 then return true end
 
-    if inventory.GetSlotWithItem then
-        local ok, slot = pcall(inventory.GetSlotWithItem, itemName, { access_key = accessKey }, true)
-        if ok and slot then return true end
-    end
+                local okSlots, slots = pcall(function()
+                    return exports.ox_inventory:Search('slots', allowedItems[i], metadataVariants[j])
+                end)
+                if okSlots and type(slots) == 'table' then
+                    for _, item in pairs(slots) do
+                        if metadataMatches(item.metadata or item.info, accessKey) then
+                            return true
+                        end
+                    end
+                end
+            end
 
-    if inventory.Search then
-        local ok, slots = pcall(inventory.Search, 'slots', itemName, { access_key = accessKey })
-        if ok and slots then
-            if type(slots) == 'table' then
+            local okSlots, slots = pcall(function()
+                return exports.ox_inventory:Search('slots', allowedItems[i])
+            end)
+            if okSlots and type(slots) == 'table' then
                 for _, item in pairs(slots) do
                     if metadataMatches(item.metadata or item.info, accessKey) then
                         return true
                     end
                 end
-            elseif slots == true then
-                return true
+            end
+        end
+    end
+
+    if not inventory then return false end
+
+    if inventory.GetItemCount then
+        for i = 1, #allowedItems do
+            for j = 1, #metadataVariants do
+                local ok, count = pcall(inventory.GetItemCount, allowedItems[i], metadataVariants[j], true)
+                if ok and tonumber(count) and tonumber(count) > 0 then return true end
+            end
+        end
+    end
+
+    if inventory.GetSlotWithItem then
+        for i = 1, #allowedItems do
+            for j = 1, #metadataVariants do
+                local ok, slot = pcall(inventory.GetSlotWithItem, allowedItems[i], metadataVariants[j], true)
+                if ok and slot and metadataMatches(slot.metadata or slot.info, accessKey) then return true end
+            end
+        end
+    end
+
+    if inventory.Search then
+        for i = 1, #allowedItems do
+            local ok, slots = pcall(inventory.Search, 'slots', allowedItems[i], { access_key = accessKey })
+            if ok and slots then
+                if type(slots) == 'table' then
+                    for _, item in pairs(slots) do
+                        if metadataMatches(item.metadata or item.info, accessKey) then
+                            return true
+                        end
+                    end
+                elseif slots == true then
+                    return true
+                end
             end
         end
     end
@@ -212,7 +387,7 @@ local function hasKeycard(accessKey)
         local ok, items = pcall(inventory.GetPlayerItems)
         if ok and type(items) == 'table' then
             for _, item in pairs(items) do
-                if item and item.name == itemName and metadataMatches(item.metadata or item.info, accessKey) then
+                if item and itemNameMatches(item, allowedItems) and metadataMatches(item.metadata or item.info, accessKey) then
                     return true
                 end
             end
@@ -222,61 +397,89 @@ local function hasKeycard(accessKey)
     return false
 end
 
-local function hasJobAccess(elevator, access)
-    local requiredGrade = tonumber(elevator.job_grade) or 0
-    return elevator.job and elevator.job ~= ''
-        and access.jobName == elevator.job
+local function hasJobAccess(accessData, access)
+    local requiredGrade = tonumber(accessData.job_grade or accessData.access_job_grade) or 0
+    local jobName = cleanAccessValue(accessData.job or accessData.access_job)
+    return jobName and jobName ~= ''
+        and access.jobName == jobName
         and (tonumber(access.jobGrade) or 0) >= requiredGrade
 end
 
-local function hasGangAccess(elevator, access)
-    local requiredGrade = tonumber(elevator.job_grade) or 0
-    return elevator.job and elevator.job ~= ''
-        and access.gangName == elevator.job
+local function hasGangAccess(accessData, access)
+    local requiredGrade = tonumber(accessData.job_grade or accessData.access_job_grade) or 0
+    local gangName = cleanAccessValue(accessData.job or accessData.access_job)
+    return gangName and gangName ~= ''
+        and access.gangName == gangName
         and (tonumber(access.gangGrade) or 0) >= requiredGrade
 end
 
-local function hasGroupAccess(elevator, access)
-    return hasJobAccess(elevator, access) or hasGangAccess(elevator, access)
+local function hasGroupAccess(accessData, access)
+    return hasJobAccess(accessData, access) or hasGangAccess(accessData, access)
 end
 
-local function checkElevatorAccess(elevator)
-    local elevatorType = elevator.type or 'public'
+local function getFloorAccessData(elevator, floor)
+    local hasFloorAccess = floor and (
+        floor.access_type ~= nil
+        or floor.access_job ~= nil
+        or floor.access_password ~= nil
+        or floor.access_key ~= nil
+        or floor.access_citizenid ~= nil
+    )
+
+    local accessType = hasFloorAccess and floor.access_type or elevator.type
+    accessType = normalizeAccessType(accessType)
+
+    return {
+        type = accessType,
+        job = cleanAccessValue(hasFloorAccess and floor.access_job or elevator.job),
+        job_grade = hasFloorAccess and floor.access_job_grade or elevator.job_grade,
+        password = cleanAccessValue(hasFloorAccess and floor.access_password or elevator.password),
+        access_key = cleanAccessValue(hasFloorAccess and floor.access_key or elevator.access_key),
+        access_item = cleanAccessValue(hasFloorAccess and floor.access_item or nil),
+        citizenid = cleanAccessValue(hasFloorAccess and floor.access_citizenid or elevator.citizenid)
+    }
+end
+
+local function checkFloorAccess(elevator, floor)
+    local accessData = getFloorAccessData(elevator, floor)
+    local accessType = normalizeAccessType(accessData.type)
     local access = getPlayerAccessData()
 
-    if elevatorType == 'public' then
-        return true, false
+    if accessType == 'public' then
+        return true, false, nil, nil
     end
 
-    if elevatorType == 'job' then
-        return hasJobAccess(elevator, access), false, lang('menu.error_job_required')
+    if accessType == 'job' or accessType == 'gang' then
+        return hasGroupAccess(accessData, access), false, lang('menu.error_job_required'), nil
     end
 
-    if elevatorType == 'gang' then
-        return hasGangAccess(elevator, access), false, lang('menu.error_job_required')
+    if accessType == 'citizenid' then
+        local allowed = accessData.citizenid and (access.citizenid == accessData.citizenid or access.sourceId == accessData.citizenid)
+        return allowed, false, lang('menu.error_citizenid_required'), nil
     end
 
-    if elevatorType == 'citizenid' then
-        return elevator.citizenid and elevator.citizenid ~= '' and access.citizenid == elevator.citizenid, false, lang('menu.error_citizenid_required')
+    if accessType == 'keycard' then
+        return hasKeycard(accessData.access_key, accessData.access_item), false, lang('menu.error_keycard_required'), nil
     end
 
-    if elevatorType == 'keycard' then
-        return hasKeycard(elevator.access_key), false, lang('menu.error_keycard_required')
+    if accessType == 'job_keycard' then
+        return hasGroupAccess(accessData, access) and hasKeycard(accessData.access_key, accessData.access_item), false, lang('menu.error_keycard_required'), nil
     end
 
-    if elevatorType == 'job_keycard' then
-        return hasGroupAccess(elevator, access) and hasKeycard(elevator.access_key), false, lang('menu.error_keycard_required')
+    if accessType == 'password' then
+        return accessData.password and accessData.password ~= '', true, lang('menu.error_password_required'), accessData.password
     end
 
-    if elevatorType == 'password' then
-        return elevator.password and elevator.password ~= '', true, lang('menu.error_password_required')
+    if accessType == 'job_password' then
+        return hasGroupAccess(accessData, access) and accessData.password and accessData.password ~= '', true, lang('menu.error_password_required'), accessData.password
     end
 
-    if elevatorType == 'job_password' then
-        return hasGroupAccess(elevator, access) and elevator.password and elevator.password ~= '', true, lang('menu.error_password_required')
+    if accessType == 'job_citizenid' then
+        local citizenAllowed = accessData.citizenid and (access.citizenid == accessData.citizenid or access.sourceId == accessData.citizenid)
+        return hasGroupAccess(accessData, access) and citizenAllowed, false, lang('menu.error_citizenid_required'), nil
     end
 
-    return false, false, lang('menu.error_select_elevator')
+    return false, false, lang('menu.error_select_elevator'), nil
 end
 
 local function waitForElevator()
@@ -380,37 +583,44 @@ local function openFloorInputKeypad(elevator, currentFloor, prop)
                 return
             end
 
+            local accessResult = pr_lib.callback.await('pr_elevator:server:checkFloorAccess', false, targetFloor.id)
+            if not accessResult then
+                runtimeNotify(lang('menu.error_select_elevator'), 'error')
+                return
+            end
+
+            if accessResult.needsPassword then
+                CreateThread(function()
+                    Wait(350)
+                    OpenKeypadEntity(prop, nil, {
+                        acceptAnyInput = true,
+                        prompt = lang('menu.password'),
+                        notify = false,
+                        onSuccess = function(_, confirmedPassword)
+                            local passwordResult = pr_lib.callback.await('pr_elevator:server:checkFloorAccess', false, targetFloor.id, confirmedPassword)
+                            if not passwordResult or not passwordResult.allowed then
+                                runtimeNotify(passwordResult and passwordResult.message or (lang('menu.invalid_password') or 'Senha invalida.'), 'error')
+                                return
+                            end
+
+                            teleportToFloor(targetFloor)
+                        end
+                    })
+                end)
+                return
+            end
+
+            if not accessResult.allowed then
+                runtimeNotify(accessResult.message or lang('menu.error_select_elevator'), 'error')
+                return
+            end
+
             teleportToFloor(targetFloor)
         end
     })
 end
 
 local function requestElevator(elevator, floor, prop)
-    local allowed, needsPassword, message = checkElevatorAccess(elevator)
-    if not allowed then
-        runtimeNotify(message or lang('menu.error_select_elevator'), 'error')
-        return
-    end
-
-    if needsPassword then
-        if not prop or prop == 0 or not DoesEntityExist(prop) or type(OpenKeypadEntity) ~= 'function' then
-            runtimeNotify(lang('menu.error_dui_unavailable') or 'DUI indisponivel.', 'error')
-            return
-        end
-
-        OpenKeypadEntity(prop, elevator.password, {
-            prompt = lang('menu.password'),
-            notify = false,
-            onSuccess = function()
-                CreateThread(function()
-                    Wait(350)
-                    openFloorInputKeypad(elevator, floor, prop)
-                end)
-            end
-        })
-        return
-    end
-
     openFloorInputKeypad(elevator, floor, prop)
 end
 
@@ -421,11 +631,15 @@ local function clearRenderedKeypads()
             if type(DeleteKeypad) == 'function' then
                 DeleteKeypad(entry.prop)
             else
-                if GetResourceState('ox_target') == 'started' then
-                    exports.ox_target:removeLocalEntity(entry.prop, 'keypad_interaction')
+                if shouldUseOxTarget() then
+                    if GetResourceState('ox_target') == 'started' then
+                        exports.ox_target:removeLocalEntity(entry.prop, 'keypad_interaction')
+                    end
                 end
-                if GetResourceState('interact') == 'started' then
-                    exports.interact:RemoveLocalEntityInteraction(entry.prop, 'keypad_interact_' .. entry.prop)
+                if shouldUseInteract() then
+                    if GetResourceState('interact') == 'started' then
+                        exports.interact:RemoveLocalEntityInteraction(entry.prop, 'keypad_interact_' .. entry.prop)
+                    end
                 end
                 DeleteEntity(entry.prop)
             end
@@ -461,8 +675,20 @@ local function renderFloorKeypad(elevator, floor)
         return
     end
 
+    local currentFloorName = floor.name or floor.floor or '?'
+    local floorDistance = tonumber(PR and PR.KeypadInteractDistance) or 2.0
+    local interactionName = ('pr_elevator_%s_%s'):format(
+        tostring(elevator.id or 'elevator'),
+        tostring(floor.id or floor.floor or currentFloorName)
+    )
+
     local prop = CreateKeypadFromInteract(interact, nil, {
-        label = ('Elevador: %s'):format(elevator.name or elevator.id),
+        name = interactionName,
+        label = ('Elevador: %s | Andar %s | Digitar andar'):format(elevator.name or elevator.id, currentFloorName),
+        distance = floorDistance,
+        targetDistance = floorDistance,
+        interactDistance = floorDistance,
+        interactDrawDistance = math.max(5.0, floorDistance + 1.0),
         onSelect = function(data)
             requestElevator(elevator, floor, data.entity)
         end
@@ -478,7 +704,7 @@ local function renderFloorKeypad(elevator, floor)
         elevator = elevator,
         floor = floor,
         coords = interact.coords,
-        hasTarget = GetResourceState('ox_target') == 'started' or GetResourceState('interact') == 'started'
+        hasTarget = type(HasKeypadTarget) == 'function' and HasKeypadTarget(prop) or hasConfiguredTargetStarted()
     }
 end
 
@@ -516,7 +742,7 @@ local function startFallbackInteractionThread()
             local sleep = 750
 
             if #renderedKeypads > 0 then
-                local targetStarted = GetResourceState('ox_target') == 'started' or GetResourceState('interact') == 'started'
+                local targetStarted = hasConfiguredTargetStarted()
                 local ped = PlayerPedId()
                 local playerCoords = GetEntityCoords(ped)
                 local nearest = nil
@@ -542,7 +768,7 @@ local function startFallbackInteractionThread()
                     end
                 end
 
-                if nearest and nearestDistance <= (tonumber(nearest.floor.distance) or 2.0) then
+                if nearest and nearestDistance <= (tonumber(PR and PR.KeypadInteractDistance) or 2.0) then
                     sleep = 0
                     if not textUiVisible then
                         lib.showTextUI('[E] Elevador')
@@ -550,7 +776,11 @@ local function startFallbackInteractionThread()
                     end
 
                     if IsControlJustReleased(0, 38) then
-                        requestElevator(nearest.elevator, nearest.floor, nearest.prop)
+                        if type(InteractWithKeypadEntity) == 'function' then
+                            InteractWithKeypadEntity(nearest.prop)
+                        else
+                            requestElevator(nearest.elevator, nearest.floor, nearest.prop)
+                        end
                     end
                 elseif textUiVisible then
                     lib.hideTextUI()
@@ -581,9 +811,14 @@ local function scheduleInitialRefresh()
 end
 
 AddEventHandler('onClientResourceStart', function(resource)
-    if resource ~= GetCurrentResourceName() then return end
+    if resource == GetCurrentResourceName() then
+        scheduleInitialRefresh()
+        return
+    end
 
-    scheduleInitialRefresh()
+    if (resource == 'interact' and shouldUseInteract()) or (resource == 'ox_target' and shouldUseOxTarget()) then
+        TriggerEvent('pr_elevator:client:refreshElevators')
+    end
 end)
 
 AddEventHandler('onClientResourceStop', function(resource)

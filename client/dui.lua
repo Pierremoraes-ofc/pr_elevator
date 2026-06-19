@@ -11,6 +11,42 @@ local maxCodeLength = 8
 local notifyKeypadActions = true
 local keypadContexts = {}
 local activeKeypadContext = nil
+local keypadTargetNames = {}
+local keypadInteractIds = {}
+local keypadRegisteredTargets = {}
+local keypadInteractionBusy = false
+local lastKeypadDisplay = 'ENTER CODE'
+local lastKeypadVisible = true
+
+local function GetInteractionMode()
+    return tostring(PR and PR.Target or 'ox_target'):lower()
+end
+
+local function ShouldUseOxTarget()
+    local mode = GetInteractionMode()
+    return mode == 'ox_target' or mode == 'target' or mode == 'both' or mode == 'all'
+end
+
+local function ShouldUseInteract()
+    local mode = GetInteractionMode()
+    return mode == 'interact' or mode == 'both' or mode == 'all'
+end
+
+local function GetKeypadInteractOffset(options)
+    local offset = options and options.interactOffset
+    if not offset and PR then
+        offset = PR.KeypadInteractOffset or PR.InteractOffset
+    end
+
+    if offset then
+        local x = tonumber(offset.x or offset[1]) or 0.0
+        local y = tonumber(offset.y or offset[2]) or 0.08
+        local z = tonumber(offset.z or offset[3]) or 0.03
+        return vector3(x, y, z)
+    end
+
+    return vector3(0.0, 0.08, 0.03)
+end
 
 local function DecodeJson(value)
     if type(value) ~= 'string' then return value end
@@ -172,12 +208,42 @@ local function SetKeypadPasscode(code)
 end
 
 local function SetKeypadDisplay(value)
+    lastKeypadDisplay = tostring(value or '')
     if duiHandle then
         duiHandle:sendMessage({
             action = "DISPLAY",
-            value = value
+            value = lastKeypadDisplay
         })
     end
+end
+
+local function SetKeypadVisible(value)
+    lastKeypadVisible = value == true
+    if duiHandle then
+        duiHandle:sendMessage({
+            action = "KEYPAD",
+            value = lastKeypadVisible
+        })
+    end
+end
+
+local function SyncKeypadDui(retries)
+    if not duiHandle then return end
+
+    retries = retries or 1
+    CreateThread(function()
+        for i = 1, retries do
+            duiHandle:sendMessage({
+                action = "KEYPAD",
+                value = lastKeypadVisible
+            })
+            duiHandle:sendMessage({
+                action = "DISPLAY",
+                value = lastKeypadDisplay
+            })
+            Wait(150)
+        end
+    end)
 end
 
 local function GetKeypadPrompt(context)
@@ -198,12 +264,29 @@ end
 
 local function RemoveKeypadTarget(prop)
     if prop and DoesEntityExist(prop) then
-        if GetResourceState('ox_target') == 'started' then
-            exports.ox_target:removeLocalEntity(prop, 'keypad_interaction')
+        if ShouldUseOxTarget() and GetResourceState('ox_target') == 'started' then
+            exports.ox_target:removeLocalEntity(prop, keypadTargetNames[prop] or 'keypad_interaction')
+            keypadTargetNames[prop] = nil
         end
-        if GetResourceState('interact') == 'started' then
-            exports.interact:RemoveLocalEntityInteraction(prop, 'keypad_interact_' .. prop)
+        if ShouldUseInteract() and GetResourceState('interact') == 'started' then
+            local interactId = keypadInteractIds[prop]
+            if interactId then
+                pcall(function()
+                    exports.interact:RemoveInteraction(interactId)
+                end)
+                pcall(function()
+                    exports.interact:RemoveInteractionByEntity(prop)
+                end)
+                pcall(function()
+                    exports.interact:RemoveInteractionById(interactId)
+                end)
+                pcall(function()
+                    exports.interact:RemoveLocalEntityInteraction(prop, interactId)
+                end)
+                keypadInteractIds[prop] = nil
+            end
         end
+        keypadRegisteredTargets[prop] = nil
     end
 end
 
@@ -211,12 +294,81 @@ function DeleteKeypad(prop)
     if prop and DoesEntityExist(prop) then
         RemoveKeypadTarget(prop)
         keypadContexts[prop] = nil
+        keypadRegisteredTargets[prop] = nil
         DeleteEntity(prop)
     end
 end
 
+local function SelectKeypad(prop, options, coords)
+    local context = keypadContexts[prop] or options
+    local data = { entity = prop, coords = coords }
+
+    if context and type(context.onSelect) == 'function' then
+        context.onSelect(data, context)
+    elseif context and (context.code or context.onSuccess) then
+        OpenKeypadEntity(prop, context and context.code, context)
+    else
+        TransitionToKeypadCam(prop, context)
+    end
+end
+
+function InteractWithKeypadEntity(prop, options, coords)
+    local context = keypadContexts[prop] or options or {}
+    if not prop or prop == 0 or not DoesEntityExist(prop) then return end
+    if keypadInteractionBusy then return end
+
+    local streaming = pr_lib and pr_lib.fivem and pr_lib.fivem.streaming
+    if not streaming or not streaming.playInteraction then
+        SelectKeypad(prop, context, coords)
+        return
+    end
+
+    keypadInteractionBusy = true
+    CreateThread(function()
+        local interactOffset = GetKeypadInteractOffset(context)
+        local anim = context.anim or context.animation or (PR and PR.KeypadInteractionAnimation) or {
+            dict = 'mp_common',
+            clip = 'givetake1_a',
+            duration = 900,
+            flags = 49
+        }
+
+        local opened = false
+        local ok = streaming.playInteraction({
+            target = prop,
+            type = 'object',
+            anim = anim,
+            position = {
+                offset = vector3(interactOffset.x, interactOffset.y - 0.55, 0.0),
+                moveTo = true,
+                ground = true,
+                faceTarget = true,
+                arriveDistance = 0.05,
+                maxDistance = 2.0,
+                timeout = 3000
+            },
+            cleanup = {
+                clearTasks = true
+            },
+            onFinish = function()
+                opened = true
+                SelectKeypad(prop, context, coords)
+            end
+        })
+
+        if not ok and not opened then
+            SelectKeypad(prop, context, coords)
+        end
+
+        keypadInteractionBusy = false
+    end)
+end
+
 function CreateDUI()
-    if duiHandle ~= nil then return end
+    if duiHandle ~= nil then
+        SyncKeypadDui(2)
+        return
+    end
     duiHandle = lib.dui:new({
         url = ("nui://%s/ui/ui.html"):format(cache.resource),
         width = 512, 
@@ -228,10 +380,9 @@ function CreateDUI()
     end)    
     AddReplaceTexture(txReplaceDict, txReplaceName, duiHandle.dictName, duiHandle.txtName)
     Wait(500)   -- Sometimes webpage hasnt loaded, not generally an issue if the dui isnt created as soon as resource starts
-    duiHandle:sendMessage({
-        action = "KEYPAD",
-        value = true
-    })
+    SetKeypadVisible(true)
+    SetKeypadDisplay(GetKeypadPrompt())
+    SyncKeypadDui(6)
 end
 
 function CreateKeypad(x, y, z, w, placementData, options)
@@ -245,56 +396,89 @@ function CreateKeypad(x, y, z, w, placementData, options)
     local prop = CreateObjectNoOffset(model, coords.x, coords.y, coords.z, false, false, false)
     if not prop or prop == 0 then return nil end
 
+    local interactionName = options.name and ('%s_%s'):format(options.name, prop) or ('keypad_interaction_%s'):format(prop)
+    local configuredInteractionDistance = tonumber(options.interactDistance or options.targetDistance or (PR and PR.KeypadInteractDistance)) or 2.0
+    local targetDistance = configuredInteractionDistance
+    local interactDst = configuredInteractionDistance
+    local interactDistance = tonumber(options.interactDrawDistance or options.drawDistance) or 5.0
+    local interactOffset = GetKeypadInteractOffset(options)
+    if interactDistance < interactDst then
+        interactDistance = interactDst + 0.5
+    end
+
     SetEntityAsMissionEntity(prop, true, true)
     ApplyKeypadTransform(prop, placement)
     FreezeEntityPosition(prop, true)
     keypadContexts[prop] = options
 
-    if GetResourceState('ox_target') == 'started' then
-        exports.ox_target:addLocalEntity(prop, {
-            {
-                name = options.name or 'keypad_interaction',
-                icon = options.icon or 'fas fa-hashtag',
-                label = options.label or 'Interact with Keypad',
-                onSelect = function(data)
-                    local context = keypadContexts[data.entity] or options
-                    if context and type(context.onSelect) == 'function' then
-                        context.onSelect(data, context)
-                    elseif context and (context.code or context.onSuccess) then
-                        OpenKeypadEntity(data.entity, context and context.code, context)
-                    else
-                        TransitionToKeypadCam(data.entity, context)
-                    end
-                end
-            }
-        })
-    end
-
-    if GetResourceState('interact') == 'started' then
-        exports.interact:AddLocalEntityInteraction({
-            entity = prop,
-            id = 'keypad_interact_' .. prop,
-            distance = 5.0,
-            interactDst = 2.0,
-            options = {
+    if ShouldUseOxTarget() and GetResourceState('ox_target') == 'started' then
+        keypadTargetNames[prop] = interactionName
+        local oxRegistered = pcall(function()
+            exports.ox_target:addLocalEntity(prop, {
                 {
+                    name = interactionName,
+                    icon = options.icon or 'fas fa-hashtag',
                     label = options.label or 'Interact with Keypad',
-                    action = function(entity, coords, args)
-                        local context = keypadContexts[entity] or options
-                        local data = { entity = entity, coords = coords }
-                        if context and type(context.onSelect) == 'function' then
-                            context.onSelect(data, context)
-                        elseif context and (context.code or context.onSuccess) then
-                            OpenKeypadEntity(entity, context and context.code, context)
-                        else
-                            TransitionToKeypadCam(entity, context)
-                        end
+                    distance = targetDistance,
+                    onSelect = function(data)
+                        InteractWithKeypadEntity(data.entity or prop, options, data.coords)
                     end
                 }
+            })
+        end)
+        if oxRegistered then
+            keypadRegisteredTargets[prop] = true
+        end
+    end
+
+    if ShouldUseInteract() and GetResourceState('interact') == 'started' then
+        local interactOptions = {
+            {
+                name = interactionName,
+                label = options.label or 'Interact with Keypad',
+                action = function(entity, actionCoords, args)
+                    InteractWithKeypadEntity(entity or prop, options, actionCoords)
+                end
             }
-        })
+        }
+
+        local localRegistered, returnedId = pcall(function()
+            return exports.interact:AddLocalEntityInteraction({
+                entity = prop,
+                name = interactionName,
+                distance = interactDistance,
+                interactDst = interactDst,
+                offset = interactOffset,
+                options = interactOptions
+            })
+        end)
+
+        if localRegistered and returnedId then
+            keypadInteractIds[prop] = returnedId
+            keypadRegisteredTargets[prop] = true
+        else
+            local coordRegistered, coordId = pcall(function()
+                local fallbackCoords = GetOffsetFromEntityInWorldCoords(prop, interactOffset.x, interactOffset.y, interactOffset.z)
+                return exports.interact:AddInteraction({
+                    name = interactionName,
+                    coords = fallbackCoords,
+                    distance = interactDistance,
+                    interactDst = interactDst,
+                    options = interactOptions
+                })
+            end)
+
+            if coordRegistered and coordId then
+                keypadInteractIds[prop] = coordId
+                keypadRegisteredTargets[prop] = true
+            end
+        end
     end
     return prop
+end
+
+function HasKeypadTarget(prop)
+    return keypadRegisteredTargets[prop] == true
 end
 
 function CreateKeypadFromInteract(interactData, code, options)
@@ -357,7 +541,9 @@ end
 function TransitionToKeypadCam(prop, context)
     activeKeypadContext = context or keypadContexts[prop]
     codeInput = ''
+    SetKeypadVisible(true)
     SetKeypadDisplay(GetKeypadPrompt(activeKeypadContext))
+    SyncKeypadDui(4)
 
     local keypadCoords = GetEntityCoords(prop)
     local camOffset = GetOffsetFromEntityInWorldCoords(prop, 0.0, -0.25, 0.0)
@@ -374,6 +560,8 @@ function TransitionToKeypadCam(prop, context)
 
     CreateThread(function()
         Wait(1000)
+        SetKeypadVisible(true)
+        SetKeypadDisplay(codeInput ~= '' and codeInput or GetKeypadPrompt(activeKeypadContext))
         SendNUIMessage({
             action = 'MOUSE',
             value = true
@@ -471,6 +659,21 @@ function ResetToDefaultCam()
         SetKeypadDisplay(GetKeypadPrompt())
     end
 end
+
+RegisterCommand('prelevator_dui_reset', function()
+    ResetToDefaultCam()
+    SetNuiFocus(false, false)
+    SetNuiFocusKeepInput(false)
+    FreezeEntityPosition(PlayerPedId(), false)
+    SendNUIMessage({
+        action = 'KEYPAD',
+        value = false
+    })
+    SendNUIMessage({
+        action = 'MOUSE',
+        value = false
+    })
+end, false)
 
 function PlayKeypadSound(sType)
     local sounds = {
