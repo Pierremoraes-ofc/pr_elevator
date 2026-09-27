@@ -1,3 +1,6 @@
+local DUI_BRIDGE_REVISION = '2026-08-19.3'
+print(('[pr_elevator] DUI pr_bridge revision %s loaded'):format(DUI_BRIDGE_REVISION))
+
 local txReplaceDict, txReplaceName = 'ch_prop_casino_keypads', 'prop_ld_keypad'
 local propHash = joaat('ch_prop_casino_keypad_01')
 local keypadHandle = nil
@@ -19,12 +22,12 @@ local lastKeypadDisplay = 'ENTER CODE'
 local lastKeypadVisible = true
 
 local function GetInteractionMode()
-    return tostring(PR and PR.Target or 'ox_target'):lower()
+    return tostring(PR and PR.Target or 'pr_bridge'):lower()
 end
 
-local function ShouldUseOxTarget()
+local function ShouldUsePrTarget()
     local mode = GetInteractionMode()
-    return mode == 'ox_target' or mode == 'target' or mode == 'both' or mode == 'all'
+    return mode == 'pr_bridge' or mode == 'target' or mode == 'both' or mode == 'all'
 end
 
 local function ShouldUseInteract()
@@ -254,7 +257,7 @@ local function NotifyKeypad(description, notifyType)
     if not notifyKeypadActions then return end
     if activeKeypadContext and activeKeypadContext.notify == false then return end
 
-    lib.notify({
+    pr_lib.notify.Notify({
         title = 'Keypad',
         description = description,
         type = notifyType or 'inform',
@@ -264,8 +267,8 @@ end
 
 local function RemoveKeypadTarget(prop)
     if prop and DoesEntityExist(prop) then
-        if ShouldUseOxTarget() and GetResourceState('ox_target') == 'started' then
-            exports.ox_target:removeLocalEntity(prop, keypadTargetNames[prop] or 'keypad_interaction')
+        if ShouldUsePrTarget() and GetResourceState('pr_bridge') == 'started' then
+            pr_lib.target.removeLocalEntity(prop, keypadTargetNames[prop] or 'keypad_interaction')
             keypadTargetNames[prop] = nil
         end
         if ShouldUseInteract() and GetResourceState('interact') == 'started' then
@@ -367,22 +370,39 @@ end
 function CreateDUI()
     if duiHandle ~= nil then
         SyncKeypadDui(2)
-        return
+        return duiHandle
     end
-    duiHandle = lib.dui:new({
-        url = ("nui://%s/ui/ui.html"):format(cache.resource),
-        width = 512, 
+
+    local createdDui, createError = pr_lib.dui.create({
+        id = 'pr_elevator_keypad',
+        url = pr_lib.dui.nuiUrl('ui/ui.html', GetCurrentResourceName()),
+        width = 512,
         height = 1024,
         debug = false
     })
-    lib.waitFor(function()
-        if duiHandle ~= nil and duiHandle.dictName ~= nil and duiHandle.txtName ~= nil then return true end
-    end)    
-    AddReplaceTexture(txReplaceDict, txReplaceName, duiHandle.dictName, duiHandle.txtName)
+
+    if not createdDui then
+        print(('[pr_elevator] Falha ao criar DUI do teclado: %s'):format(tostring(createError)))
+        return nil, createError
+    end
+
+    local replaced, replaceError = createdDui:replaceTexture({
+        originalTxd = txReplaceDict,
+        originalTxn = txReplaceName
+    })
+
+    if not replaced then
+        createdDui:destroy()
+        print(('[pr_elevator] Falha ao substituir textura do teclado: %s'):format(tostring(replaceError)))
+        return nil, replaceError
+    end
+
+    duiHandle = createdDui
     Wait(500)   -- Sometimes webpage hasnt loaded, not generally an issue if the dui isnt created as soon as resource starts
     SetKeypadVisible(true)
     SetKeypadDisplay(GetKeypadPrompt())
     SyncKeypadDui(6)
+    return duiHandle
 end
 
 function CreateKeypad(x, y, z, w, placementData, options)
@@ -391,7 +411,7 @@ function CreateKeypad(x, y, z, w, placementData, options)
     options = options or {}
 
     local model = placement.model or propHash
-    lib.requestModel(model)
+    pr_lib.requestModel(model)
     local coords = placement.coords
     local prop = CreateObjectNoOffset(model, coords.x, coords.y, coords.z, false, false, false)
     if not prop or prop == 0 then return nil end
@@ -411,10 +431,10 @@ function CreateKeypad(x, y, z, w, placementData, options)
     FreezeEntityPosition(prop, true)
     keypadContexts[prop] = options
 
-    if ShouldUseOxTarget() and GetResourceState('ox_target') == 'started' then
+    if ShouldUsePrTarget() and GetResourceState('pr_bridge') == 'started' then
         keypadTargetNames[prop] = interactionName
         local oxRegistered = pcall(function()
-            exports.ox_target:addLocalEntity(prop, {
+            pr_lib.target.addLocalEntity(prop, {
                 {
                     name = interactionName,
                     icon = options.icon or 'fas fa-hashtag',
@@ -522,7 +542,7 @@ function CreateTestKeypad(code)
     DeleteKeypad(keypadHandle)
     keypadHandle = nil
 
-    local ped = cache.ped or PlayerPedId()
+    local ped = pr_lib.cache.get('ped') or PlayerPedId()
     local coords = GetOffsetFromEntityInWorldCoords(ped, 0.0, 1.0, 0.45)
     local heading = GetEntityHeading(ped)
 
@@ -554,7 +574,8 @@ function TransitionToKeypadCam(prop, context)
     SetCamActive(keypadCam, true)
     RenderScriptCams(true, true, 1000, true, true)
     
-    FreezeEntityPosition(cache.ped, true)
+    local ped = pr_lib.cache.get('ped') or PlayerPedId()
+    FreezeEntityPosition(ped, true)
     TriggerEvent('zoom:updateBlock', true)          -- <= Will be different per server, hide / disable what you want here
     TriggerEvent('hud:client:ToggleHUD', false)     -- ..................................................................
 
@@ -646,7 +667,8 @@ function ResetToDefaultCam()
         keypadCam = nil
     end
     HighlightButton(0)
-    FreezeEntityPosition(cache.ped, false)
+    local ped = pr_lib.cache.get('ped') or PlayerPedId()
+    FreezeEntityPosition(ped, false)
     TriggerEvent('zoom:updateBlock', false)     -- <= Will be different per server, show / enable what you want here
     TriggerEvent('hud:client:ToggleHUD', true)  -- ..................................................................
     SendNUIMessage({
@@ -785,7 +807,13 @@ exports('DeleteKeypad', DeleteKeypad)
 
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= GetCurrentResourceName() then return end
-    RemoveReplaceTexture(txReplaceDict, txReplaceName)
+    if duiHandle and type(duiHandle.destroy) == 'function' then
+        duiHandle:destroy()
+        duiHandle = nil
+    else
+        RemoveReplaceTexture(txReplaceDict, txReplaceName)
+    end
+
     DeleteKeypad(keypadHandle)
     ResetToDefaultCam()
 end)

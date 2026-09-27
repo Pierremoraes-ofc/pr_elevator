@@ -1,6 +1,24 @@
 -- aqui servidor do sistema de menu para gerenciamento dos elevadores e andares
 local lang = pr_lib.locale()
 
+local function printLocaleDebug()
+    local localeName = type(lang) == 'table' and type(lang.locale) == 'function' and lang:locale() or tostring(lang)
+    local localeResource = type(lang) == 'table' and lang.resource or 'unknown'
+    local localePath = type(lang) == 'table' and lang.path or 'unknown'
+    local convarLocale = GetConvar('pr_bridge:locale', 'nil')
+    local stateLocale = GlobalState and GlobalState.pr_bridge_locale or 'nil'
+
+    print(('[pr_elevator][server] idioma=%s convar=%s globalState=%s resource=%s path=%s'):format(
+        tostring(localeName),
+        tostring(convarLocale),
+        tostring(stateLocale),
+        tostring(localeResource),
+        tostring(localePath)
+    ))
+end
+
+printLocaleDebug()
+
 local function getAffectedRows(result)
     if type(result) == 'number' then return result end
     if result == true then return 1 end

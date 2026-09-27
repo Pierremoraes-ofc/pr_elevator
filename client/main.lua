@@ -6,12 +6,12 @@ local textUiVisible = false
 local refreshInProgress = false
 
 local function getInteractionMode()
-    return tostring(PR and PR.Target or 'ox_target'):lower()
+    return tostring(PR and PR.Target or 'pr_bridge'):lower()
 end
 
-local function shouldUseOxTarget()
+local function shouldUsePrTarget()
     local mode = getInteractionMode()
-    return mode == 'ox_target' or mode == 'target' or mode == 'both' or mode == 'all'
+    return mode == 'pr_bridge' or mode == 'target' or mode == 'both' or mode == 'all'
 end
 
 local function shouldUseInteract()
@@ -20,7 +20,7 @@ local function shouldUseInteract()
 end
 
 local function hasConfiguredTargetStarted()
-    return (shouldUseOxTarget() and GetResourceState('ox_target') == 'started')
+    return (shouldUsePrTarget() and GetResourceState('pr_bridge') == 'started')
         or (shouldUseInteract() and GetResourceState('interact') == 'started')
 end
 
@@ -40,7 +40,7 @@ local function runtimeNotify(description, notifyType)
         return
     end
 
-    lib.notify({
+    pr_lib.notify.Notify({
         title = lang('menu.title'),
         description = description,
         type = notifyType or 'inform',
@@ -484,8 +484,8 @@ end
 
 local function waitForElevator()
     local duration = PR.elevatorWaitTime or 3000
-    if lib and lib.progressBar then
-        return lib.progressBar({
+    if pr_lib and pr_lib.progressBar then
+        return pr_lib.progressBar({
             duration = duration,
             label = lang('menu.waiting_elevator') or 'Aguardando elevador...',
             canCancel = false,
@@ -631,9 +631,9 @@ local function clearRenderedKeypads()
             if type(DeleteKeypad) == 'function' then
                 DeleteKeypad(entry.prop)
             else
-                if shouldUseOxTarget() then
-                    if GetResourceState('ox_target') == 'started' then
-                        exports.ox_target:removeLocalEntity(entry.prop, 'keypad_interaction')
+                if shouldUsePrTarget() then
+                    if GetResourceState('pr_bridge') == 'started' then
+                        pr_lib.target.removeLocalEntity(entry.prop, 'keypad_interaction')
                     end
                 end
                 if shouldUseInteract() then
@@ -771,7 +771,7 @@ local function startFallbackInteractionThread()
                 if nearest and nearestDistance <= (tonumber(PR and PR.KeypadInteractDistance) or 2.0) then
                     sleep = 0
                     if not textUiVisible then
-                        lib.showTextUI('[E] Elevador')
+                        pr_lib.showTextUI('[E] Elevador')
                         textUiVisible = true
                     end
 
@@ -783,11 +783,11 @@ local function startFallbackInteractionThread()
                         end
                     end
                 elseif textUiVisible then
-                    lib.hideTextUI()
+                    pr_lib.hideTextUI()
                     textUiVisible = false
                 end
             elseif textUiVisible then
-                lib.hideTextUI()
+                pr_lib.hideTextUI()
                 textUiVisible = false
             end
 
@@ -816,7 +816,7 @@ AddEventHandler('onClientResourceStart', function(resource)
         return
     end
 
-    if (resource == 'interact' and shouldUseInteract()) or (resource == 'ox_target' and shouldUseOxTarget()) then
+    if (resource == 'interact' and shouldUseInteract()) or (resource == 'pr_bridge' and shouldUsePrTarget()) then
         TriggerEvent('pr_elevator:client:refreshElevators')
     end
 end)
@@ -825,7 +825,7 @@ AddEventHandler('onClientResourceStop', function(resource)
     if resource ~= GetCurrentResourceName() then return end
 
     if textUiVisible then
-        lib.hideTextUI()
+        pr_lib.hideTextUI()
         textUiVisible = false
     end
 

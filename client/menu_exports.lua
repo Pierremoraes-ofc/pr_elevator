@@ -434,7 +434,7 @@ local function createDuiPlacementProp(existingInteract)
     local rotation = placement and placement.rotation or nil
     local model = placement and placement.model or DUI_KEYPAD_MODEL
 
-    lib.requestModel(model)
+    pr_lib.requestModel(model)
 
     if not coords then
         local forwardCoords = GetOffsetFromEntityInWorldCoords(ped, 0.0, 1.0, 0.45)
@@ -464,7 +464,7 @@ end
 
 local function captureDuiInteractPlacement(existingInteract)
     local gizmo = pr_lib.gizmo or (pr_lib.fivem and pr_lib.fivem.gizmo)
-    if not gizmo or type(gizmo.start) ~= 'function' then
+    if not gizmo or type(gizmo.await) ~= 'function' then
         notifyExport(lang('menu.error_gizmo_unavailable') or 'Gizmo indisponivel no pr_bridge.', 'error')
         return nil
     end
@@ -475,18 +475,10 @@ local function captureDuiInteractPlacement(existingInteract)
         return nil
     end
 
-    lib.showTextUI(lang('menu.textui_position_dui') or [[
-**[ENTER]** - Confirmar posicao do prop
-**[BACKSPACE/ESC]** - Cancelar
-**[R]** - Alternar mover/rotacionar
-**[G]** - Encaixar no chao
-**[F]** - Alternar camera
-**[TAB]** - Precisao
-]])
-
-    gizmo.start(prop, function()
+    local result = gizmo.await(prop, function()
         return true
     end, nil, {
+        title = 'DUI Keypad',
         showPreview = true,
         previewTitle = 'DUI Keypad',
         precisionMode = false,
@@ -494,33 +486,9 @@ local function captureDuiInteractPlacement(existingInteract)
         allowFreeCameraToggle = true,
         useEditorCamera = true,
         editorCameraRadius = 1.6,
+        restoreOnCancel = true,
     })
-
-    local confirmed = false
-    local ignoreCancelUntil = 0
-
-    while DoesEntityExist(prop) do
-        Wait(0)
-
-        if isRightMouseActive() then
-            ignoreCancelUntil = GetGameTimer() + 150
-        end
-
-        if wasControlReleased(201) or wasControlReleased(191) then
-            confirmed = true
-            break
-        end
-
-        if GetGameTimer() >= ignoreCancelUntil and (wasControlReleased(177) or wasControlReleased(202) or wasControlReleased(200)) then
-            break
-        end
-    end
-
-    if gizmo.stop then
-        gizmo.stop()
-    end
-
-    lib.hideTextUI()
+    local confirmed = result and result.confirmed == true
 
     local payload = nil
     if confirmed and DoesEntityExist(prop) then
@@ -607,7 +575,7 @@ ExportCreateFloorMenu = function(elevator, context, presetSpawn, presetInteract)
 
         if not spawnStr or not interactStr then
             local ped = PlayerPedId()
-            lib.showTextUI(lang('menu.textui_position_spawn') or "Posicione-se onde sera o spawn do andar e pressione [E] para marcar ou [BACKSPACE] para cancelar")
+            pr_lib.showTextUI(lang('menu.textui_position_spawn') or "Posicione-se onde sera o spawn do andar e pressione [E] para marcar ou [BACKSPACE] para cancelar")
 
             local spawnCoords = nil
             local spawnHeading = nil
@@ -619,13 +587,13 @@ ExportCreateFloorMenu = function(elevator, context, presetSpawn, presetInteract)
                     spawnHeading = GetEntityHeading(ped)
                     break
                 elseif IsControlJustReleased(0, 177) or IsControlJustReleased(0, 202) then
-                    lib.hideTextUI()
+                    pr_lib.hideTextUI()
                     ExportCreatorMenu(context)
                     return
                 end
             end
 
-            lib.hideTextUI()
+            pr_lib.hideTextUI()
             spawnStr = string.format("%.2f, %.2f, %.2f, %.2f", spawnCoords.x, spawnCoords.y, spawnCoords.z, spawnHeading)
 
             Wait(200)

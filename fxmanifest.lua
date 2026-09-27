@@ -4,11 +4,13 @@ game 'gta5'
 
 author 'Pinel Devs - PierreMoraes'
 description 'The best Elevator Script'
+repository 'https://github.com/Pierremoraes-ofc/pr_elevator'
 
-version '1.1.0'
+version '1.1.2'
+
+dependency 'pr_bridge'
 
 shared_scripts {
-    '@ox_lib/init.lua',
     '@pr_bridge/init.lua',
     'shared/config.lua',
     'locale/*.lua'
@@ -22,6 +24,7 @@ client_scripts {
 }
 
 server_scripts {
+    'server/version.lua',
     'server/main.lua',
     'server/menu.lua',
 }
@@ -37,10 +40,5 @@ files {
 
 --[[
 
-precisa criar o item para o ox_inventory
-precisa criar a opçao de puxar players proximos
-precisa add ao menu para editar o elevador
-precisa edd ao menu para dar o item certinho
-precisa add a funcao do elevador para puxar veiculo caso o elevador seja de veiculo também!
 
 ]]

@@ -2,6 +2,11 @@ PR = {}
 
 
 -------------------------------------------------------------------
+-- VERSION CHECK
+-------------------------------------------------------------------
+PR.versionCheck = true
+
+-------------------------------------------------------------------
 -- NOTIFY POSITION SETTINGS
 -------------------------------------------------------------------
 PR.notifyPosition = 'center-left'
@@ -10,7 +15,7 @@ PR.notifyPosition = 'center-left'
 -- KEYBINDS SETTINGS
 -------------------------------------------------------------------
 PR.keyBinds = {
-    'ALT', '7'
+    'ALT', '6'
 }
 
 -------------------------------------------------------------------
@@ -50,7 +55,7 @@ PR.Marker = {
 }
 
 
-PR.Target = 'ox_target'         -- ox_target, interact, or both
+PR.Target = 'pr_bridge'         -- pr_bridge, interact, or both
 
 PR.KeypadInteractDistance = 2.0
 
