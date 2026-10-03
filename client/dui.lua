@@ -1,5 +1,6 @@
-local DUI_BRIDGE_REVISION = '2026-08-19.3'
-print(('[pr_elevator] DUI pr_bridge revision %s loaded'):format(DUI_BRIDGE_REVISION))
+local lang = pr_lib.locale()
+local DUI_BRIDGE_REVISION = '2026-10-03-server-validation'
+print(lang('debug.dui_revision', DUI_BRIDGE_REVISION))
 
 local txReplaceDict, txReplaceName = 'ch_prop_casino_keypads', 'prop_ld_keypad'
 local propHash = joaat('ch_prop_casino_keypad_01')
@@ -18,8 +19,13 @@ local keypadTargetNames = {}
 local keypadInteractIds = {}
 local keypadRegisteredTargets = {}
 local keypadInteractionBusy = false
-local lastKeypadDisplay = 'ENTER CODE'
+local lastKeypadDisplay = lang('keypad.prompt')
 local lastKeypadVisible = true
+local duiPageReady = false
+local activeKeypadEntity = nil
+local duiPreviewActive = false
+local confirmationBusy = false
+local keypadSession = 0
 
 local function GetInteractionMode()
     return tostring(PR and PR.Target or 'pr_bridge'):lower()
@@ -48,7 +54,7 @@ local function GetKeypadInteractOffset(options)
         return vector3(x, y, z)
     end
 
-    return vector3(0.0, 0.08, 0.03)
+    return vector3(0.0, -0.18, 0.03)
 end
 
 local function DecodeJson(value)
@@ -250,15 +256,57 @@ local function SyncKeypadDui(retries)
 end
 
 local function GetKeypadPrompt(context)
-    return (context and context.prompt) or 'ENTER CODE'
+    return (context and context.prompt) or lang('keypad.prompt')
 end
+
+RegisterNUICallback('keypadDuiReady', function(_, cb)
+    duiPageReady = true
+    cb({ok=true})
+    -- The DOM may be ready after native IsDuiAvailable and the initial retries.
+    SyncKeypadDui(2)
+end)
+
+RegisterCommand('prelevator_dui_status', function()
+    print((lang('debug.dui_status')):format(
+        tostring(duiHandle~=nil), tostring(duiPageReady), tostring(duiHandle and duiHandle.active),
+        txReplaceDict, txReplaceName, tostring(duiHandle and duiHandle.url)))
+    local entity = activeKeypadEntity
+    local model = entity and DoesEntityExist(entity) and GetEntityModel(entity) or nil
+    local available = duiHandle and duiHandle.duiObject and IsDuiAvailable(duiHandle.duiObject) or false
+    print((lang('debug.dui_native')):format(
+        tostring(available), tostring(model), tostring(propHash),
+        tostring(duiHandle and duiHandle.txd), tostring(duiHandle and duiHandle.txn),
+        tostring(duiHandle and duiHandle.runtimeTxd), tostring(duiHandle and duiHandle.txdObject)))
+end, false)
+
+-- Preview the same runtime texture without changing input or saved placement.
+RegisterCommand('prelevator_dui_preview', function()
+    if duiPreviewActive then return end
+    if not duiHandle or not duiHandle.active then
+        print(lang('debug.preview_open'))
+        return
+    end
+    local instance = duiHandle
+    local ok, err = instance:startSprite({x=0.15, y=0.5, width=0.2, height=0.7})
+    if not ok then
+        print((lang('debug.preview_failed')):format(tostring(err)))
+        return
+    end
+    duiPreviewActive = true
+    print(lang('debug.preview_started'))
+    CreateThread(function()
+        Wait(10000)
+        if instance.active then instance:stopSprite() end
+        duiPreviewActive = false
+    end)
+end, false)
 
 local function NotifyKeypad(description, notifyType)
     if not notifyKeypadActions then return end
     if activeKeypadContext and activeKeypadContext.notify == false then return end
 
     pr_lib.notify.Notify({
-        title = 'Keypad',
+        title = lang('menu.keypad'),
         description = description,
         type = notifyType or 'inform',
         duration = 1500
@@ -267,24 +315,15 @@ end
 
 local function RemoveKeypadTarget(prop)
     if prop and DoesEntityExist(prop) then
-        if ShouldUsePrTarget() and GetResourceState('pr_bridge') == 'started' then
-            pr_lib.target.removeLocalEntity(prop, keypadTargetNames[prop] or 'keypad_interaction')
+        if keypadTargetNames[prop] and GetResourceState('pr_bridge') == 'started' then
+            exports.pr_bridge:removeLocalEntity(prop, keypadTargetNames[prop])
             keypadTargetNames[prop] = nil
         end
-        if ShouldUseInteract() and GetResourceState('interact') == 'started' then
+        if GetResourceState('pr_bridge') == 'started' then
             local interactId = keypadInteractIds[prop]
             if interactId then
                 pcall(function()
-                    exports.interact:RemoveInteraction(interactId)
-                end)
-                pcall(function()
-                    exports.interact:RemoveInteractionByEntity(prop)
-                end)
-                pcall(function()
-                    exports.interact:RemoveInteractionById(interactId)
-                end)
-                pcall(function()
-                    exports.interact:RemoveLocalEntityInteraction(prop, interactId)
+                    exports.pr_bridge:RemoveInteraction(interactId)
                 end)
                 keypadInteractIds[prop] = nil
             end
@@ -294,6 +333,7 @@ local function RemoveKeypadTarget(prop)
 end
 
 function DeleteKeypad(prop)
+    if prop and prop == activeKeypadEntity then ResetToDefaultCam() end
     if prop and DoesEntityExist(prop) then
         RemoveKeypadTarget(prop)
         keypadContexts[prop] = nil
@@ -373,16 +413,17 @@ function CreateDUI()
         return duiHandle
     end
 
+    duiPageReady = false
     local createdDui, createError = pr_lib.dui.create({
         id = 'pr_elevator_keypad',
-        url = pr_lib.dui.nuiUrl('ui/ui.html', GetCurrentResourceName()),
+        url = pr_lib.dui.nuiUrl('ui/ui.html?dui=1', GetCurrentResourceName()),
         width = 512,
         height = 1024,
         debug = false
     })
 
     if not createdDui then
-        print(('[pr_elevator] Falha ao criar DUI do teclado: %s'):format(tostring(createError)))
+        print((lang('debug.dui_create_failed')):format(tostring(createError)))
         return nil, createError
     end
 
@@ -393,7 +434,7 @@ function CreateDUI()
 
     if not replaced then
         createdDui:destroy()
-        print(('[pr_elevator] Falha ao substituir textura do teclado: %s'):format(tostring(replaceError)))
+        print((lang('debug.dui_replace_failed')):format(tostring(replaceError)))
         return nil, replaceError
     end
 
@@ -434,12 +475,14 @@ function CreateKeypad(x, y, z, w, placementData, options)
     if ShouldUsePrTarget() and GetResourceState('pr_bridge') == 'started' then
         keypadTargetNames[prop] = interactionName
         local oxRegistered = pcall(function()
-            pr_lib.target.addLocalEntity(prop, {
+            exports.pr_bridge:addLocalEntity(prop, {
                 {
                     name = interactionName,
                     icon = options.icon or 'fas fa-hashtag',
-                    label = options.label or 'Interact with Keypad',
+                    label = options.label or lang('menu.interact_keypad'),
                     distance = targetDistance,
+                    ignoreLos = PR.RespectWalls == false,
+                    wallDetection = PR.RespectWalls ~= false,
                     onSelect = function(data)
                         InteractWithKeypadEntity(data.entity or prop, options, data.coords)
                     end
@@ -451,11 +494,11 @@ function CreateKeypad(x, y, z, w, placementData, options)
         end
     end
 
-    if ShouldUseInteract() and GetResourceState('interact') == 'started' then
+    if ShouldUseInteract() and GetResourceState('pr_bridge') == 'started' then
         local interactOptions = {
             {
                 name = interactionName,
-                label = options.label or 'Interact with Keypad',
+                label = options.label or lang('menu.interact_keypad'),
                 action = function(entity, actionCoords, args)
                     InteractWithKeypadEntity(entity or prop, options, actionCoords)
                 end
@@ -463,12 +506,14 @@ function CreateKeypad(x, y, z, w, placementData, options)
         }
 
         local localRegistered, returnedId = pcall(function()
-            return exports.interact:AddLocalEntityInteraction({
+            return exports.pr_bridge:AddLocalEntityInteraction({
                 entity = prop,
                 name = interactionName,
                 distance = interactDistance,
                 interactDst = interactDst,
                 offset = interactOffset,
+                ignoreLos = PR.RespectWalls == false,
+                wallDetection = PR.RespectWalls ~= false,
                 options = interactOptions
             })
         end)
@@ -479,11 +524,13 @@ function CreateKeypad(x, y, z, w, placementData, options)
         else
             local coordRegistered, coordId = pcall(function()
                 local fallbackCoords = GetOffsetFromEntityInWorldCoords(prop, interactOffset.x, interactOffset.y, interactOffset.z)
-                return exports.interact:AddInteraction({
+                return exports.pr_bridge:AddInteraction({
                     name = interactionName,
                     coords = fallbackCoords,
                     distance = interactDistance,
                     interactDst = interactDst,
+                    ignoreLos = PR.RespectWalls == false,
+                    wallDetection = PR.RespectWalls ~= false,
                     options = interactOptions
                 })
             end)
@@ -548,7 +595,7 @@ function CreateTestKeypad(code)
 
     keypadHandle = CreateKeypad(coords.x, coords.y, coords.z, heading)
     SetKeypadPasscode(code)
-    print(('[DUI Keypad] Test code: %s'):format(passcode))
+    print(lang('debug.test_code'))
 
     return keypadHandle, passcode
 end
@@ -559,6 +606,10 @@ function CalculateInitialCameraRotation(keypadHeading)
 end
 
 function TransitionToKeypadCam(prop, context)
+    keypadSession = keypadSession + 1
+    local session = keypadSession
+    confirmationBusy = false
+    activeKeypadEntity = prop
     activeKeypadContext = context or keypadContexts[prop]
     codeInput = ''
     SetKeypadVisible(true)
@@ -581,8 +632,10 @@ function TransitionToKeypadCam(prop, context)
 
     CreateThread(function()
         Wait(1000)
+        if session ~= keypadSession then return end
         SetKeypadVisible(true)
-        SetKeypadDisplay(codeInput ~= '' and codeInput or GetKeypadPrompt(activeKeypadContext))
+        -- Preserve CHECKING/INVALID/SUCCESS instead of restoring an older prompt.
+        SyncKeypadDui(1)
         SendNUIMessage({
             action = 'MOUSE',
             value = true
@@ -594,7 +647,7 @@ function TransitionToKeypadCam(prop, context)
 
     -- Track the camera's rotation and determine which button is being looked at
     CreateThread(function()
-        while DoesCamExist(keypadCam) and IsCamActive(keypadCam) do
+        while session == keypadSession and DoesCamExist(keypadCam) and IsCamActive(keypadCam) do
             DisableAllControlActions(0)
 
             -- Get mouse input
@@ -661,6 +714,8 @@ function math.clamp(value, min, max)
 end
 
 function ResetToDefaultCam()
+    keypadSession = keypadSession + 1
+    confirmationBusy = false
     if DoesCamExist(keypadCam) then
         RenderScriptCams(false, true, 1000, true, true)
         DestroyCam(keypadCam, false)
@@ -719,19 +774,46 @@ function PlayKeypadSound(sType)
 end
 
 local function ConfirmCode()
+    if confirmationBusy then return end
     local context = activeKeypadContext
     local confirmedCode = codeInput
 
     if confirmedCode == '' then
         PlayKeypadSound(2)
-        SetKeypadDisplay('EMPTY')
-        NotifyKeypad('Digite um valor', 'error')
+        SetKeypadDisplay(lang('keypad.empty'))
+        NotifyKeypad(lang('keypad.enter_value'), 'error')
         return
     end
 
-    if (context and context.acceptAnyInput) or confirmedCode == passcode then
+    if context and type(context.validateInput) == 'function' then
+        confirmationBusy = true
+        local session = keypadSession
+        SetKeypadDisplay(lang('keypad.checking'))
+        CreateThread(function()
+            local ok, allowed, display = pcall(context.validateInput, context, confirmedCode)
+            -- ESC, a removed keypad or another session invalidate late results.
+            if session ~= keypadSession or activeKeypadContext ~= context then return end
+            if not ok then
+                print(lang('debug.validation_failed'))
+                allowed, display = false, lang('keypad.error')
+            end
+            if allowed ~= true then
+                codeInput = ''
+                PlayKeypadSound(2)
+                SetKeypadDisplay(display or lang('keypad.invalid'))
+                confirmationBusy = false
+                return
+            end
+            PlayKeypadSound(3)
+            SetKeypadDisplay(display or lang('keypad.success'))
+            Wait(750)
+            if session ~= keypadSession or activeKeypadContext ~= context then return end
+            ResetToDefaultCam()
+            if type(context.onSuccess) == 'function' then context.onSuccess(context, confirmedCode) end
+        end)
+    elseif (context and context.acceptAnyInput) or confirmedCode == passcode then
         PlayKeypadSound(3)
-        SetKeypadDisplay('SUCCESS')
+        SetKeypadDisplay(lang('keypad.success'))
         if context and type(context.onSuccess) == 'function' then
             CreateThread(function()
                 Wait(250)
@@ -739,39 +821,40 @@ local function ConfirmCode()
                 context.onSuccess(context, confirmedCode)
             end)
         else
-            NotifyKeypad(('Confirmado: %s'):format(confirmedCode), 'success')
+            NotifyKeypad(lang('keypad.confirmed'), 'success')
         end
     else
         codeInput = ''
         PlayKeypadSound(2)
-        SetKeypadDisplay('INVALID')
-        NotifyKeypad('Codigo invalido', 'error')
+        SetKeypadDisplay(lang('keypad.invalid'))
+        NotifyKeypad(lang('keypad.invalid_code'), 'error')
     end
 end
 
 function ClickButton(buttonId)
+    if confirmationBusy and buttonId ~= 13 then return end
     local input = inputButtons[buttonId]
 
     if input and #codeInput < maxCodeLength then
         PlayKeypadSound(1)
         codeInput = codeInput .. input
         SetKeypadDisplay(codeInput)
-        NotifyKeypad(('Tecla: %s'):format(input))
+        NotifyKeypad(lang('keypad.key', input))
     elseif buttonId == 13 then -- Red / cancel and exit
         PlayKeypadSound(1)
-        NotifyKeypad('Cancelado', 'error')
+        NotifyKeypad(lang('keypad.cancelled'), 'error')
         ResetToDefaultCam()
     elseif buttonId == 14 then -- Green / confirm
         PlayKeypadSound(1)
         ConfirmCode()
     elseif buttonId == 15 then -- Blue / unused
         PlayKeypadSound(1)
-        NotifyKeypad('Botao azul sem funcao')
+        NotifyKeypad(lang('keypad.blue_unused'))
     elseif buttonId == 16 then -- Yellow / correct
         PlayKeypadSound(1)
         codeInput = codeInput:sub(1, -2)
         SetKeypadDisplay(codeInput ~= '' and codeInput or GetKeypadPrompt(activeKeypadContext))
-        NotifyKeypad(codeInput ~= '' and ('Corrigido: %s'):format(codeInput) or 'Entrada limpa')
+        NotifyKeypad(lang('keypad.corrected'))
     end
 end
 
@@ -791,7 +874,7 @@ RegisterCommand('createkeypad', function(source, args)
     DeleteKeypad(keypadHandle)
     keypadHandle = CreateKeypad(212.12, 1168.74, 227.5, 283.88)
     SetKeypadPasscode(args[1])
-    print('Code: ' .. passcode)
+    print(lang('debug.test_code'))
 	
 end, false)
 

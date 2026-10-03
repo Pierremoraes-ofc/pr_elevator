@@ -5,7 +5,7 @@ body {
     height: 100vh;
     margin: 0;
     background: transparent;
-    font-family: "Roboto Mono", serif;
+    font-family: Consolas, "Courier New", monospace;
     font-optical-sizing: auto;
     font-weight: 400;
     font-style: normal;
@@ -51,7 +51,7 @@ img {
     top: 18vh;
     left: 50vw;
     transform: translateX(-50%);
-    font-family: 'Seven Segment', sans-serif;
+    font-family: Consolas, "Courier New", monospace;
     font-weight: 400;
     font-size: 8vh;
     display: flex;
@@ -59,6 +59,8 @@ img {
     justify-content: center;
     text-align: center;
     color: black;
+    overflow: hidden;
+    white-space: nowrap;
 }
 
 .input {

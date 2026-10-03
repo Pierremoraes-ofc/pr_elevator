@@ -13,10 +13,12 @@ dependency 'pr_bridge'
 shared_scripts {
     '@pr_bridge/init.lua',
     'shared/config.lua',
+    'shared/settings.lua',
     'locale/*.lua'
 }
 
 client_scripts {
+    'client/settings.lua',
     'client/dui.lua',
     'client/main.lua',
     'client/menu.lua',
@@ -24,6 +26,7 @@ client_scripts {
 }
 
 server_scripts {
+    'server/settings.lua',
     'server/version.lua',
     'server/main.lua',
     'server/menu.lua',

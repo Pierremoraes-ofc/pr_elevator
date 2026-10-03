@@ -4,6 +4,7 @@ local runtimeElevators = {}
 local renderedKeypads = {}
 local textUiVisible = false
 local refreshInProgress = false
+local refreshRequested = false
 
 local function getInteractionMode()
     return tostring(PR and PR.Target or 'pr_bridge'):lower()
@@ -21,7 +22,7 @@ end
 
 local function hasConfiguredTargetStarted()
     return (shouldUsePrTarget() and GetResourceState('pr_bridge') == 'started')
-        or (shouldUseInteract() and GetResourceState('interact') == 'started')
+        or (shouldUseInteract() and GetResourceState('pr_bridge') == 'started')
 end
 
 local function runtimeDebug(message)
@@ -487,7 +488,7 @@ local function waitForElevator()
     if pr_lib and pr_lib.progressBar then
         return pr_lib.progressBar({
             duration = duration,
-            label = lang('menu.waiting_elevator') or 'Aguardando elevador...',
+            label = lang('menu.waiting_elevator'),
             canCancel = false,
             disable = {
                 move = true,
@@ -563,32 +564,42 @@ local function openFloorInputKeypad(elevator, currentFloor, prop)
     end
 
     if not prop or prop == 0 or not DoesEntityExist(prop) or type(OpenKeypadEntity) ~= 'function' then
-        runtimeNotify(lang('menu.error_dui_unavailable') or 'DUI indisponivel.', 'error')
+        runtimeNotify(lang('menu.error_dui_unavailable'), 'error')
         return
     end
 
+    local targetFloor, accessResult
     OpenKeypadEntity(prop, nil, {
         acceptAnyInput = true,
-        prompt = 'ANDAR',
+        prompt = lang('keypad.floor'),
         notify = false,
-        onSuccess = function(_, confirmedCode)
-            local targetFloor, normalizedCode = findFloorByCode(elevator, confirmedCode)
+        validateInput = function(_, confirmedCode)
+            local normalizedCode
+            targetFloor, normalizedCode = findFloorByCode(elevator, confirmedCode)
             if not targetFloor then
-                runtimeNotify((lang('menu.floor_not_found') or 'Andar "%s" nao encontrado.'):format(normalizedCode), 'error')
-                return
+                runtimeNotify((lang('menu.floor_not_found')):format(normalizedCode), 'error')
+                return false, lang('keypad.invalid_floor')
             end
 
             if currentFloor and targetFloor.id == currentFloor.id then
-                runtimeNotify(lang('menu.floor_current') or 'Voce ja esta neste andar.', 'inform')
-                return
+                runtimeNotify(lang('menu.floor_current'), 'inform')
+                return false, lang('keypad.current_floor')
             end
 
-            local accessResult = pr_lib.callback.await('pr_elevator:server:checkFloorAccess', false, targetFloor.id)
+            accessResult = pr_lib.callback.await('pr_elevator:server:checkFloorAccess', false, targetFloor.id)
             if not accessResult then
                 runtimeNotify(lang('menu.error_select_elevator'), 'error')
-                return
+                return false, lang('keypad.error')
             end
 
+            if accessResult.needsPassword then return true, lang('keypad.password') end
+            if not accessResult.allowed then
+                runtimeNotify(accessResult.message or lang('menu.error_select_elevator'), 'error')
+                return false, lang('keypad.denied')
+            end
+            return true
+        end,
+        onSuccess = function()
             if accessResult.needsPassword then
                 CreateThread(function()
                     Wait(350)
@@ -596,22 +607,20 @@ local function openFloorInputKeypad(elevator, currentFloor, prop)
                         acceptAnyInput = true,
                         prompt = lang('menu.password'),
                         notify = false,
-                        onSuccess = function(_, confirmedPassword)
+                        validateInput = function(_, confirmedPassword)
                             local passwordResult = pr_lib.callback.await('pr_elevator:server:checkFloorAccess', false, targetFloor.id, confirmedPassword)
                             if not passwordResult or not passwordResult.allowed then
-                                runtimeNotify(passwordResult and passwordResult.message or (lang('menu.invalid_password') or 'Senha invalida.'), 'error')
-                                return
+                                runtimeNotify(passwordResult and passwordResult.message or (lang('menu.invalid_password')), 'error')
+                                return false, passwordResult and lang('keypad.invalid_password') or lang('keypad.error')
                             end
 
+                            return true
+                        end,
+                        onSuccess = function()
                             teleportToFloor(targetFloor)
                         end
                     })
                 end)
-                return
-            end
-
-            if not accessResult.allowed then
-                runtimeNotify(accessResult.message or lang('menu.error_select_elevator'), 'error')
                 return
             end
 
@@ -633,12 +642,12 @@ local function clearRenderedKeypads()
             else
                 if shouldUsePrTarget() then
                     if GetResourceState('pr_bridge') == 'started' then
-                        pr_lib.target.removeLocalEntity(entry.prop, 'keypad_interaction')
+                        exports.pr_bridge:removeLocalEntity(entry.prop, 'keypad_interaction')
                     end
                 end
                 if shouldUseInteract() then
-                    if GetResourceState('interact') == 'started' then
-                        exports.interact:RemoveLocalEntityInteraction(entry.prop, 'keypad_interact_' .. entry.prop)
+                    if GetResourceState('pr_bridge') == 'started' then
+                        exports.pr_bridge:RemoveLocalEntityInteraction(entry.prop, 'keypad_interact_' .. entry.prop)
                     end
                 end
                 DeleteEntity(entry.prop)
@@ -654,7 +663,7 @@ local function renderFloorKeypad(elevator, floor)
     if not interact then
         local legacyCoords = normalizeSpawnCoords(floor.coords)
         if not legacyCoords then
-            runtimeDebug(("andar id=%s elevador=%s sem interact_coords/coords validos; prop nao renderizado"):format(tostring(floor.id), tostring(elevator.id)))
+            runtimeDebug((lang('debug.runtime_missing_coords')):format(tostring(floor.id), tostring(elevator.id)))
             return
         end
 
@@ -668,10 +677,10 @@ local function renderFloorKeypad(elevator, floor)
             },
             heading = legacyCoords.heading or 0.0
         }
-        runtimeDebug(("andar id=%s elevador=%s usando coords legado como interacao"):format(tostring(floor.id), tostring(elevator.id)))
+        runtimeDebug((lang('debug.runtime_legacy_coords')):format(tostring(floor.id), tostring(elevator.id)))
     end
     if type(CreateKeypadFromInteract) ~= 'function' then
-        runtimeDebug("CreateKeypadFromInteract indisponivel; DUI ainda nao carregou")
+        runtimeDebug(lang('debug.runtime_dui_unavailable'))
         return
     end
 
@@ -684,7 +693,7 @@ local function renderFloorKeypad(elevator, floor)
 
     local prop = CreateKeypadFromInteract(interact, nil, {
         name = interactionName,
-        label = ('Elevador: %s | Andar %s | Digitar andar'):format(elevator.name or elevator.id, currentFloorName),
+        label = (lang('menu.runtime_interaction')):format(elevator.name or elevator.id, currentFloorName),
         distance = floorDistance,
         targetDistance = floorDistance,
         interactDistance = floorDistance,
@@ -695,7 +704,7 @@ local function renderFloorKeypad(elevator, floor)
     })
 
     if not prop then
-        runtimeDebug(("falha ao criar prop do andar id=%s elevador=%s"):format(tostring(floor.id), tostring(elevator.id)))
+        runtimeDebug((lang('debug.runtime_prop_failed')):format(tostring(floor.id), tostring(elevator.id)))
         return
     end
 
@@ -709,12 +718,12 @@ local function renderFloorKeypad(elevator, floor)
 end
 
 local function refreshRuntimeElevators()
-    if refreshInProgress then return end
+    if refreshInProgress then refreshRequested=true;return end
     refreshInProgress = true
 
     clearRenderedKeypads()
     runtimeElevators = {}
-    runtimeDebug("recarregando elevadores")
+    runtimeDebug(lang('debug.runtime_reload'))
 
     local duiTimeout = GetGameTimer() + 5000
     while type(CreateKeypadFromInteract) ~= 'function' and GetGameTimer() < duiTimeout do
@@ -732,8 +741,12 @@ local function refreshRuntimeElevators()
         end
     end
 
-    runtimeDebug(("elevadores=%s props=%s"):format(tostring(#runtimeElevators), tostring(#renderedKeypads)))
+    runtimeDebug((lang('debug.runtime_count')):format(tostring(#runtimeElevators), tostring(#renderedKeypads)))
     refreshInProgress = false
+    if refreshRequested then
+        refreshRequested=false
+        CreateThread(refreshRuntimeElevators)
+    end
 end
 
 local function startFallbackInteractionThread()
@@ -771,7 +784,7 @@ local function startFallbackInteractionThread()
                 if nearest and nearestDistance <= (tonumber(PR and PR.KeypadInteractDistance) or 2.0) then
                     sleep = 0
                     if not textUiVisible then
-                        pr_lib.showTextUI('[E] Elevador')
+                        pr_lib.showTextUI('[E] ' .. lang('menu.title'))
                         textUiVisible = true
                     end
 
@@ -816,7 +829,7 @@ AddEventHandler('onClientResourceStart', function(resource)
         return
     end
 
-    if (resource == 'interact' and shouldUseInteract()) or (resource == 'pr_bridge' and shouldUsePrTarget()) then
+    if resource == 'pr_bridge' then
         TriggerEvent('pr_elevator:client:refreshElevators')
     end
 end)

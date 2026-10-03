@@ -27,15 +27,15 @@ PR.InventoryImagePath = 'nui://ox_inventory/web/images/%s.png'
 PR.ItemList = {
     {
         item = 'key_card_ilegal',
-        label = 'Cartao Ilegal'
+        labelKey = 'items.illegal'
     },
     {
         item = 'key_card_security',
-        label = 'Cartao de Seguranca'
+        labelKey = 'items.security'
     },
     {
         item = 'key_card_gold',
-        label = 'Cartao Vip'
+        labelKey = 'items.vip'
     }
 }
 
@@ -55,14 +55,17 @@ PR.Marker = {
 }
 
 
-PR.Target = 'pr_bridge'         -- pr_bridge, interact, or both
+-- Runtime interaction settings are authoritative in data/settings.json and the
+-- administrator settings menu. These are only safe defaults before synchronization.
+PR.Target = 'target'             -- target, interact, both; all provided by pr_bridge
+PR.RespectWalls = true
 
 PR.KeypadInteractDistance = 2.0
 
 -- Offset local do ponto do interact no prop DUI.
 -- y = frente/trás do prop, x = lateral, z = altura.
 -- No ch_prop_casino_keypad_01, a frente fica no y negativo local.
-PR.KeypadInteractOffset = vector3(0.0, -0.08, 0.03)
+PR.KeypadInteractOffset = vector3(0.0, -0.18, 0.03)
 
 PR.KeypadInteractionAnimation = {
     dict = 'mp_common',

@@ -11,7 +11,7 @@ local DUI_KEYPAD_MODEL_NAME = 'ch_prop_casino_keypad_01'
 
 local function notifyExport(description, notifyType)
     pr_lib.notifications.Notify({
-        title = lang('menu.title') or 'Elevador',
+        title = lang('menu.title'),
         description = description,
         type = notifyType or 'inform',
         duration = 5000,
@@ -113,7 +113,7 @@ local function buildAccessTypeOptions()
         { value = 'citizenid', label = lang('menu.form_type_citizenid') },
         { value = 'password', label = lang('menu.form_type_password') },
         { value = 'keycard', label = lang('menu.form_type_keycard') },
-        { value = 'job_citizenid', label = lang('menu.form_type_job_citizenid') or 'Emprego/Gang + Player ID' },
+        { value = 'job_citizenid', label = lang('menu.form_type_job_citizenid') },
         { value = 'job_keycard', label = lang('menu.form_type_job_keycard') },
         { value = 'job_password', label = lang('menu.form_type_job_password') },
     }
@@ -121,7 +121,7 @@ end
 
 local function buildJobOptions(serverJobs)
     local options = {
-        { value = 'none', label = 'Nenhum' }
+        { value = 'none', label = lang('menu.none') }
     }
 
     if serverJobs then
@@ -149,7 +149,7 @@ local function getConfiguredItemList()
             if type(itemData) == 'table' then
                 items[#items + 1] = {
                     item = itemData.item or itemData.name or itemName,
-                    label = itemData.label or itemData.item or itemData.name or itemName,
+                    label = itemData.labelKey and lang(itemData.labelKey) or itemData.label or itemData.item or itemData.name or itemName,
                     image = itemData.image
                 }
             elseif type(itemData) == 'string' then
@@ -179,7 +179,7 @@ local function getItemName(itemData)
 end
 
 local function getItemLabel(itemData)
-    if type(itemData) == 'table' then return itemData.label or itemData.item or itemData.name end
+    if type(itemData) == 'table' then return itemData.labelKey and lang(itemData.labelKey) or itemData.label or itemData.item or itemData.name end
     return itemData
 end
 
@@ -194,7 +194,7 @@ end
 
 local function buildKeycardItemOptions()
     local options = {
-        { value = 'none', label = 'Qualquer cartao configurado' }
+        { value = 'none', label = lang('menu.any_keycard') }
     }
     local items = getConfiguredItemList()
 
@@ -465,22 +465,22 @@ end
 local function captureDuiInteractPlacement(existingInteract)
     local gizmo = pr_lib.gizmo or (pr_lib.fivem and pr_lib.fivem.gizmo)
     if not gizmo or type(gizmo.await) ~= 'function' then
-        notifyExport(lang('menu.error_gizmo_unavailable') or 'Gizmo indisponivel no pr_bridge.', 'error')
+        notifyExport(lang('menu.error_gizmo_unavailable'), 'error')
         return nil
     end
 
     local prop = createDuiPlacementProp(existingInteract)
     if not prop then
-        notifyExport(lang('menu.error_dui_position') or 'Nao foi possivel criar o prop DUI.', 'error')
+        notifyExport(lang('menu.error_dui_position'), 'error')
         return nil
     end
 
     local result = gizmo.await(prop, function()
         return true
     end, nil, {
-        title = 'DUI Keypad',
+        title = lang('menu.keypad'),
         showPreview = true,
-        previewTitle = 'DUI Keypad',
+        previewTitle = lang('menu.keypad'),
         precisionMode = false,
         freeCameraMode = false,
         allowFreeCameraToggle = true,
@@ -541,7 +541,7 @@ ExportCreateFloorMenu = function(elevator, context, presetSpawn, presetInteract)
     CreateThread(function()
         if not canUseExportCreator() then return end
         if not elevator or not elevator.id then
-            notifyExport(lang('menu.error_select_elevator') or 'Elevador invalido.', 'error')
+            notifyExport(lang('menu.error_select_elevator'), 'error')
             return
         end
 
@@ -722,8 +722,8 @@ ExportSelectElevatorForFloorMenu = function(context)
         for i = 1, #elevators do
             local elevator = elevators[i]
             options[#options + 1] = {
-                title = elevator.name or ("ID: " .. elevator.id),
-                description = ("ID: %s"):format(elevator.id),
+                title = elevator.name or lang('menu.id', elevator.id),
+                description = lang('menu.id', elevator.id),
                 onSelect = function()
                     ExportCreateFloorMenu(elevator, context, context.spawnCoords, context.interactCoords)
                 end
@@ -731,7 +731,7 @@ ExportSelectElevatorForFloorMenu = function(context)
         end
 
         options[#options + 1] = {
-            title = '<- Voltar',
+            title = lang('menu.back'),
             onSelect = function()
                 ExportCreatorMenu(context)
             end
@@ -763,7 +763,7 @@ ExportCreateKeycardMenu = function(context)
                     description = item,
                     image = getItemImage(items[i]),
                     metadata = {
-                        { label = 'Item', value = item }
+                        { label = lang('menu.item'), value = item }
                     },
                     onSelect = function()
                         local input = pr_lib.menu.InputDialog(lang('menu.create_item'), {
@@ -789,7 +789,7 @@ ExportCreateKeycardMenu = function(context)
         end
 
         options[#options + 1] = {
-            title = '<- Voltar',
+            title = lang('menu.back'),
             onSelect = function()
                 ExportCreatorMenu(context)
             end
@@ -836,7 +836,7 @@ ExportCreatorMenu = function(context)
 
         pr_lib.menu.RegisterContext({
             id = 'pr_elevator_export_creator_menu',
-            title = context.title or 'Criar elevador',
+            title = context.title or lang('menu.create_elevator'),
             options = options
         })
         pr_lib.menu.ShowContext('pr_elevator_export_creator_menu')
@@ -849,7 +849,7 @@ end)
 
 RegisterCommand('prelevator_export_test', function()
     ExportCreatorMenu({
-        title = 'Teste - Criador de Elevador'
+        title = lang('menu.creator_test')
     })
 end, false)
 

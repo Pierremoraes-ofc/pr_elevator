@@ -3,15 +3,17 @@ local lang = pr_lib.locale()
 
 local function printLocaleDebug()
     local localeName = type(lang) == 'table' and type(lang.locale) == 'function' and lang:locale() or tostring(lang)
-    local localeResource = type(lang) == 'table' and lang.resource or 'unknown'
-    local localePath = type(lang) == 'table' and lang.path or 'unknown'
+    local localeResource = type(lang) == 'table' and lang.resource or lang('debug.not_available')
+    local localePath = type(lang) == 'table' and lang.path or lang('debug.not_available')
     local convarLocale = GetConvar('pr_bridge:locale', 'nil')
-    local stateLocale = GlobalState and GlobalState.pr_bridge_locale or 'nil'
+    -- O idioma resolvido pelo bridge e a fonte; nao depender de replicacao global.
+    pr_lib.cache.set('pr_elevator:locale', localeName)
+    local cachedLocale = pr_lib.cache.get('pr_elevator:locale', 'nil')
 
-    print(('[pr_elevator][server] idioma=%s convar=%s globalState=%s resource=%s path=%s'):format(
+    print((lang('debug.locale_server')):format(
         tostring(localeName),
         tostring(convarLocale),
-        tostring(stateLocale),
+        tostring(cachedLocale),
         tostring(localeResource),
         tostring(localePath)
     ))
@@ -200,7 +202,7 @@ pr_lib.callback.register('pr_elevator:server:getJobsList', function(source)
         for jobName, jobData in pairs(jobs) do
             table.insert(jobList, {
                 name = jobName,
-                label = ("[Job] " .. (jobData.label or jobName))
+                label = lang('menu.job_prefix', jobData.label or jobName)
             })
         end
     end
@@ -219,7 +221,7 @@ pr_lib.callback.register('pr_elevator:server:getJobsList', function(source)
         for gangName, gangData in pairs(gangs) do
             table.insert(jobList, {
                 name = gangName,
-                label = ("[Gang] " .. (gangData.label or gangName))
+                label = lang('menu.gang_prefix', gangData.label or gangName)
             })
         end
     end
@@ -227,11 +229,11 @@ pr_lib.callback.register('pr_elevator:server:getJobsList', function(source)
     -- Lista fallback padrão
     if #jobList == 0 then
         jobList = {
-            { name = 'police', label = '[Job] Police' },
-            { name = 'ambulance', label = '[Job] Ambulance' },
-            { name = 'mechanic', label = '[Job] Mechanic' },
-            { name = 'lostmc', label = '[Gang] Lost MC' },
-            { name = 'ballas', label = '[Gang] Ballas' }
+            { name = 'police', label = lang('menu.job_prefix', lang('menu.police')) },
+            { name = 'ambulance', label = lang('menu.job_prefix', lang('menu.ambulance')) },
+            { name = 'mechanic', label = lang('menu.job_prefix', lang('menu.mechanic')) },
+            { name = 'lostmc', label = lang('menu.gang_prefix', 'Lost MC') },
+            { name = 'ballas', label = lang('menu.gang_prefix', 'Ballas') }
         }
     end
 
@@ -677,7 +679,7 @@ pr_lib.callback.register('pr_elevator:server:checkFloorAccess', function(source,
 
     local row = result and result[1]
     if not row then
-        return denied(lang('menu.floor_not_found') or 'Andar nao encontrado.')
+        return denied(lang('menu.floor_not_found') or lang('menu.floor_missing'))
     end
 
     local accessData = buildAccessData(row)
@@ -716,7 +718,7 @@ pr_lib.callback.register('pr_elevator:server:checkFloorAccess', function(source,
             }
         end
         if passwordMatches(accessData.password, passwordAttempt) then return allowed() end
-        return denied(lang('menu.invalid_password') or 'Senha invalida.')
+        return denied(lang('menu.invalid_password'))
     end
 
     return allowed()
@@ -733,7 +735,7 @@ RegisterNetEvent('pr_elevator:server:createElevator', function(name, elevatorTyp
             TriggerClientEvent('pr_elevator:client:notify', src, lang('menu.title'), lang('menu.elevator_created'), 'success')
             TriggerClientEvent('pr_elevator:client:refreshElevators', -1)
         else
-            TriggerClientEvent('pr_elevator:client:notify', src, lang('menu.title'), 'Erro ao criar elevador.', 'error')
+            TriggerClientEvent('pr_elevator:client:notify', src, lang('menu.title'), lang('menu.create_failed'), 'error')
         end
     end)
 end)
@@ -750,9 +752,9 @@ RegisterNetEvent('pr_elevator:server:updateElevator', function(elevatorId, name)
     local src = source
     pr_lib.db.execute('UPDATE pr_elevator_elevator SET name = ? WHERE id = ?', {name, elevatorId}, function(rowsChanged)
         if not dbWriteSucceeded(rowsChanged) then
-            TriggerClientEvent('pr_elevator:client:notify', src, lang('menu.title'), 'Erro ao atualizar elevador.', 'error')
+            TriggerClientEvent('pr_elevator:client:notify', src, lang('menu.title'), lang('menu.update_failed'), 'error')
         else
-            TriggerClientEvent('pr_elevator:client:notify', src, lang('menu.title'), lang('menu.elevator_updated') or 'Elevador atualizado com sucesso!', 'success')
+            TriggerClientEvent('pr_elevator:client:notify', src, lang('menu.title'), lang('menu.elevator_updated'), 'success')
             TriggerClientEvent('pr_elevator:client:refreshElevators', -1)
         end
     end)
@@ -772,7 +774,7 @@ RegisterNetEvent('pr_elevator:server:createFloor', function(elevatorId, floorNam
             TriggerClientEvent('pr_elevator:client:notify', src, lang('menu.title'), lang('menu.floor_created'), 'success')
             TriggerClientEvent('pr_elevator:client:refreshElevators', -1)
         else
-            TriggerClientEvent('pr_elevator:client:notify', src, lang('menu.title'), 'Erro ao criar andar.', 'error')
+            TriggerClientEvent('pr_elevator:client:notify', src, lang('menu.title'), lang('menu.floor_create_failed'), 'error')
         end
     end)
 end)
@@ -801,7 +803,7 @@ RegisterNetEvent('pr_elevator:server:updateFloor', function(floorId, elevatorId,
                 floorName, floorOrder, distance, themeColor, themeBackground, spawnJson, interactJson, accessType, accessJob, accessJobGrade, accessPassword, accessKey, accessItem, accessCitizenid, floorId
             }, function(rowsChanged2)
                 if not dbWriteSucceeded(rowsChanged2) then
-                    TriggerClientEvent('pr_elevator:client:notify', src, lang('menu.title'), 'Erro ao atualizar andar.', 'error')
+                    TriggerClientEvent('pr_elevator:client:notify', src, lang('menu.title'), lang('menu.floor_update_failed'), 'error')
                 else
                     TriggerClientEvent('pr_elevator:client:refreshElevators', -1)
                 end
@@ -813,7 +815,7 @@ RegisterNetEvent('pr_elevator:server:updateFloor', function(floorId, elevatorId,
             floorName, floorOrder, distance, themeColor, themeBackground, spawnJson, interactJson, accessType, accessJob, accessJobGrade, accessPassword, accessKey, accessItem, accessCitizenid, floorId
         }, function(rowsChanged)
             if not dbWriteSucceeded(rowsChanged) then
-                TriggerClientEvent('pr_elevator:client:notify', src, lang('menu.title'), 'Erro ao atualizar andar.', 'error')
+                TriggerClientEvent('pr_elevator:client:notify', src, lang('menu.title'), lang('menu.floor_update_failed'), 'error')
             else
                 TriggerClientEvent('pr_elevator:client:refreshElevators', -1)
             end
@@ -830,7 +832,7 @@ RegisterNetEvent('pr_elevator:server:giveKeycard', function(itemName, accessKey)
         access_key = accessKey,
         accessKey = accessKey,
         access = accessKey,
-        description = ('Acessos: %s'):format(accessKey)
+        description = (lang('menu.keycard_access')):format(accessKey)
     }
 
     local success = pr_lib.inventory.AddItem(src, item, count, metadata)

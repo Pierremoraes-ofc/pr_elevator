@@ -1,7 +1,7 @@
 -- criaçao do menu de elevadores e andares
 local lang = pr_lib.locale()
 
-print('idioma setado: ', lang:locale())
+print(lang('debug.locale_client', lang:locale()))
 --  verificações importantes ao iniciar o script.
 AddEventHandler("onResourceStart", function(resource)
     if resource ~= GetCurrentResourceName() then return end
@@ -11,7 +11,7 @@ end)
 
 --  Sistema de notificaçao.
 function notify(title, description, notifyType)
-    pr_lib.debug("info", lang("debug.notify_client", { title = title or "N/A", description = description or "N/A", type = notifyType or "inform" }))
+    pr_lib.debug("info", lang("debug.notify_client", { title = title or lang('debug.not_available'), description = description or lang('debug.not_available'), type = notifyType or "inform" }))
 
     pr_lib.notifications.Notify({
         title = title,
@@ -83,7 +83,7 @@ local function buildAccessTypeOptions()
         { value = 'citizenid', label = lang('menu.form_type_citizenid') },
         { value = 'password', label = lang('menu.form_type_password') },
         { value = 'keycard', label = lang('menu.form_type_keycard') },
-        { value = 'job_citizenid', label = lang('menu.form_type_job_citizenid') or 'Emprego/Gang + Player ID' },
+        { value = 'job_citizenid', label = lang('menu.form_type_job_citizenid') },
         { value = 'job_keycard', label = lang('menu.form_type_job_keycard') },
         { value = 'job_password', label = lang('menu.form_type_job_password') },
     }
@@ -91,7 +91,7 @@ end
 
 local function buildJobOptions(serverJobs)
     local options = {
-        { value = 'none', label = 'Nenhum' }
+        { value = 'none', label = lang('menu.none') }
     }
 
     if serverJobs then
@@ -119,7 +119,7 @@ local function getConfiguredItemList()
             if type(itemData) == 'table' then
                 items[#items + 1] = {
                     item = itemData.item or itemData.name or itemName,
-                    label = itemData.label or itemData.item or itemData.name or itemName,
+                    label = itemData.labelKey and lang(itemData.labelKey) or itemData.label or itemData.item or itemData.name or itemName,
                     image = itemData.image
                 }
             elseif type(itemData) == 'string' then
@@ -149,7 +149,7 @@ local function getItemName(itemData)
 end
 
 local function getItemLabel(itemData)
-    if type(itemData) == 'table' then return itemData.label or itemData.item or itemData.name end
+    if type(itemData) == 'table' then return itemData.labelKey and lang(itemData.labelKey) or itemData.label or itemData.item or itemData.name end
     return itemData
 end
 
@@ -164,7 +164,7 @@ end
 
 local function buildKeycardItemOptions()
     local options = {
-        { value = 'none', label = 'Qualquer cartao configurado' }
+        { value = 'none', label = lang('menu.any_keycard') }
     }
     local items = getConfiguredItemList()
 
@@ -517,22 +517,22 @@ end
 local function captureDuiInteractPlacement(existingInteract)
     local gizmo = pr_lib.gizmo or (pr_lib.fivem and pr_lib.fivem.gizmo)
     if not gizmo or type(gizmo.await) ~= 'function' then
-        notify(lang('menu.title'), lang('menu.error_gizmo_unavailable') or 'Gizmo indisponivel no pr_bridge.', 'error')
+        notify(lang('menu.title'), lang('menu.error_gizmo_unavailable'), 'error')
         return nil
     end
 
     local prop = createDuiPlacementProp(existingInteract)
     if not prop then
-        notify(lang('menu.title'), lang('menu.error_dui_position') or 'Nao foi possivel criar o prop DUI.', 'error')
+        notify(lang('menu.title'), lang('menu.error_dui_position'), 'error')
         return nil
     end
 
     local result = gizmo.await(prop, function()
         return true
     end, nil, {
-        title = 'DUI Keypad',
+        title = lang('menu.keypad'),
         showPreview = true,
-        previewTitle = 'DUI Keypad',
+        previewTitle = lang('menu.keypad'),
         precisionMode = false,
         freeCameraMode = false,
         allowFreeCameraToggle = true,
@@ -561,6 +561,11 @@ OpenManageMenu = function()
             id = 'pr_elevator_manage_menu',
             title = lang('menu.title'),
             options = {
+                {
+                    title = lang('menu.settings'),
+                    icon = 'gear',
+                    onSelect = function() OpenElevatorSettingsMenu() end
+                },
                 {
                     title = lang('menu.manage_elevators'),
                     icon = 'elevator',
@@ -608,8 +613,8 @@ OpenElevatorListMenu = function()
         for i = 1, #elevators do
             local el = elevators[i]
             table.insert(options, {
-                title = el.name or ("ID: " .. el.id),
-                description = ("ID: %s"):format(el.id),
+                title = el.name or lang('menu.id', el.id),
+                description = lang('menu.id', el.id),
                 onSelect = function()
                     OpenElevatorControlMenu(el)
                 end
@@ -617,7 +622,7 @@ OpenElevatorListMenu = function()
         end
 
         table.insert(options, {
-            title = '← Voltar',
+            title = lang('menu.back'),
             onSelect = function()
                 OpenManageMenu()
             end
@@ -672,7 +677,7 @@ OpenElevatorControlMenu = function(el)
                     end
                 },
                 {
-                    title = '← Voltar',
+                    title = lang('menu.back'),
                     onSelect = function()
                         OpenElevatorListMenu()
                     end
@@ -729,7 +734,7 @@ OpenFloorListMenu = function(el)
 
                 table.insert(options, {
                     title = lang('menu.floor_detail'):format(fl.floor, fl.name),
-                    description = fl.coords and ("Coords registradas"),
+                    description = fl.coords and (lang('menu.coords_registered')),
                     metadata = {
                         {label = lang('menu.meta_coords'), value = string.format("X: %.2f | Y: %.2f | Z: %.2f", cx, cy, cz)},
                         {label = lang('menu.meta_interact'), value = formatInteractSummary(currentInteract)},
@@ -750,7 +755,7 @@ OpenFloorListMenu = function(el)
         end
 
         table.insert(options, {
-            title = '← Voltar',
+            title = lang('menu.back'),
             onSelect = function()
                 OpenElevatorControlMenu(el)
             end
@@ -801,7 +806,7 @@ OpenFloorControlMenu = function(el, fl)
                     end
                 },
                 {
-                    title = lang('menu.position_dui') or 'Reposicionar Prop DUI',
+                    title = lang('menu.position_dui'),
                     icon = 'up-down-left-right',
                     onSelect = function()
                         OpenFloorDuiPlacementEditor(el, fl)
@@ -824,7 +829,7 @@ OpenFloorControlMenu = function(el, fl)
                     end
                 },
                 {
-                    title = '← Voltar',
+                    title = lang('menu.back'),
                     onSelect = function()
                         OpenFloorListMenu(el)
                     end
@@ -874,8 +879,8 @@ CreateFloorMenu = function()
         for i = 1, #elevators do
             local el = elevators[i]
             table.insert(elevatorOptions, {
-                title = el.name or ("ID: " .. el.id),
-                description = ("ID: %s"):format(el.id),
+                title = el.name or lang('menu.id', el.id),
+                description = lang('menu.id', el.id),
                 onSelect = function()
                     -- Uma vez que selecionou o elevador, prosseguir para o formulário
                     OpenFloorDetailsInputDialog(el)
@@ -884,7 +889,7 @@ CreateFloorMenu = function()
         end
 
         table.insert(elevatorOptions, {
-            title = '← Voltar',
+            title = lang('menu.back'),
             onSelect = function()
                 OpenManageMenu()
             end
@@ -1254,7 +1259,7 @@ CreateItemMenu = function()
                     description = item,
                     image = getItemImage(items[i]),
                     metadata = {
-                        { label = 'Item', value = item }
+                        { label = lang('menu.item'), value = item }
                     },
                     onSelect = function()
                         local input = pr_lib.menu.InputDialog(lang('menu.create_item'), {
@@ -1280,7 +1285,7 @@ CreateItemMenu = function()
         end
 
         options[#options + 1] = {
-            title = '← Voltar',
+            title = lang('menu.back'),
             onSelect = function()
                 OpenManageMenu()
             end
