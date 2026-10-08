@@ -22,11 +22,13 @@ CreateThread(function()
     end
     print(lang('debug.settings_sync_failed'))
 end)
-function OpenElevatorSettingsMenu()
+function OpenElevatorSettingsMenu(onReturn)
+    local function back() if type(onReturn)=='function' then onReturn() end end
     CreateThread(function()
         local value,allowed=pr_lib.callback.await('pr_elevator:server:getSettings',15000)
         if not value or not allowed then
             pr_lib.Notify({title=lang('menu.settings'),description=lang('menu.settings_denied'),type='error'})
+            back()
             return
         end
         local input=pr_lib.menu.InputDialog(lang('menu.settings'),{
@@ -37,10 +39,11 @@ function OpenElevatorSettingsMenu()
             {type='number',label=lang('menu.settings_offset'),required=true,default=value.frontOffset,min=0.05,max=1,step=0.01},
             {type='number',label=lang('menu.settings_distance'),required=true,default=value.distance,min=0.5,max=5,step=0.1}
         })
-        if not input then return end
+        if not input then back();return end
         local saved,result=pr_lib.callback.await('pr_elevator:server:saveSettings',15000,
             {mode=input[1],respectWalls=input[2]==true,frontOffset=input[3],distance=input[4],revision=value.revision})
         if saved then apply(result) end
         pr_lib.Notify({title=lang('menu.settings'),description=lang(saved and 'menu.settings_saved' or 'menu.settings_failed'),type=saved and 'success' or 'error'})
+        back()
     end)
 end

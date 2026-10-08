@@ -14,6 +14,10 @@ local function snapshot()
 end
 local function canManage(src)
     if not src or src<=0 then return false end
+    if type(GetResourceState)=='function' and GetResourceState('forge-core')=='started' then
+        local success,allowed=pcall(function() return exports['forge-core']:CanManageServerSettings(src) end)
+        if success and allowed==true then return true end
+    end
     local ace=pr_lib.ace
     if ace and type(ace.isAdminWhitelisted)=='function' and ace.isAdminWhitelisted(src) then return true end
     for _,permission in ipairs({'pr_elevator.admin','admin','group.admin','god'}) do

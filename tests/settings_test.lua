@@ -13,6 +13,12 @@ local read=callbacks['pr_elevator:server:getSettings']
 local save=callbacks['pr_elevator:server:saveSettings']
 local value,allowed=read(1);assert(allowed and value.revision==0)
 assert(not select(2,read(2)))
+GetResourceState=function()return 'started'end
+local forgeAllowed=false
+exports={['forge-core']={CanManageServerSettings=function(_,src)return forgeAllowed and src==2 end}}
+assert(not select(2,read(2)))
+forgeAllowed=true;assert(select(2,read(2)))
+forgeAllowed=false
 local update={mode='interact',respectWalls=false,frontOffset=0.25,distance=3,revision=0}
 assert(not save(2,update),'Non-admin cannot save')
 local saved,state=save(1,update)
@@ -48,3 +54,16 @@ assert(PR.Target=='interact' and #refreshes==1,'Out of order packet must not rev
 apply({mode='both',respectWalls=false,frontOffset=0.2,distance=1,revision=4})
 assert(PR.Target=='both' and not PR.RespectWalls and #refreshes==2)
 print('PASS: client cache/revision synchronization, live refresh and front offset')
+-- Cancelling and confirming the settings dialog both return to the caller.
+local returned=0
+pr_lib.menu={InputDialog=function()return nil end}
+pr_lib.Notify=function()end
+local function returnMenu()returned=returned+1 end
+OpenElevatorSettingsMenu(returnMenu);threads[#threads]();assert(returned==1)
+pr_lib.menu.InputDialog=function()return {'target',true,0.2,2}end
+pr_lib.callback.await=function(name)
+    if name=='pr_elevator:server:saveSettings' then return true,{mode='target',respectWalls=true,frontOffset=0.2,distance=2,revision=5} end
+    return {mode='both',respectWalls=false,frontOffset=0.2,distance=1,revision=4},true
+end
+OpenElevatorSettingsMenu(returnMenu);threads[#threads]();assert(returned==2)
+print('PASS: settings cancel/save navigation back to the caller')

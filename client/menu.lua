@@ -28,6 +28,7 @@ end)
 
 -- Declarações locais para navegação do menu
 local OpenManageMenu
+local manageParent,manageParentResource
 local OpenElevatorListMenu
 local OpenElevatorControlMenu
 local OpenFloorListMenu
@@ -557,14 +558,21 @@ end
 -- Menu Principal de Gerenciamento
 OpenManageMenu = function()
     CreateThread(function()
+        local _,allowed=pr_lib.callback.await('pr_elevator:server:getSettings',false)
+        if not allowed then
+            notify(lang('menu.title'),lang('menu.settings_denied'),'error')
+            return
+        end
         pr_lib.menu.RegisterContext({
             id = 'pr_elevator_manage_menu',
             title = lang('menu.title'),
+            menu = manageParent,
+            menuResource = manageParentResource,
             options = {
                 {
                     title = lang('menu.settings'),
                     icon = 'gear',
-                    onSelect = function() OpenElevatorSettingsMenu() end
+                    onSelect = function() OpenElevatorSettingsMenu(OpenManageMenu) end
                 },
                 {
                     title = lang('menu.manage_elevators'),
@@ -1302,11 +1310,18 @@ CreateItemMenu = function()
 end
 
 --  Teclas de atalho para abrir o Menu.
+exports('OpenAdminMenu',function(parent,resource)
+    manageParent=type(parent)=='string' and parent or nil
+    manageParentResource=manageParent and (type(resource)=='string' and resource or GetInvokingResource()) or nil
+    OpenManageMenu()
+end)
+
 pr_lib.addKeybind({
     name = lang('menu.elevator_keybind'),
     description = lang('menu.elevator_keybind_description'),
     defaultKey = PR.keyBinds,
     onPressed = function(self)
+        manageParent,manageParentResource=nil,nil
         OpenManageMenu()
     end,
 })
