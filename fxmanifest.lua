@@ -6,7 +6,7 @@ author 'Pinel Devs - PierreMoraes'
 description 'The best Elevator Script'
 repository 'https://github.com/Pierremoraes-ofc/pr_elevator'
 
-version '1.1.2'
+version '1.1.4'
 
 dependency 'pr_bridge'
 
